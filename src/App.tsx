@@ -19,12 +19,15 @@ import {
   Download,
   Fuel,
   Goal,
+  Image,
   Plus,
   RefreshCw,
   Search,
   Star,
   TrendingUp,
+  Upload,
   Wallet,
+  X,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
@@ -44,6 +47,9 @@ type DailyLog = {
   rating?: number
   acceptance?: number
   note?: string
+  proofName?: string
+  proofUrl?: string
+  proofStatus?: 'local' | 'uploaded'
 }
 
 type Expense = {
@@ -95,6 +101,8 @@ const target = {
   jobs: 22,
 }
 
+const defaultUploadEndpoint = import.meta.env.VITE_UPLOAD_ENDPOINT as string | undefined
+
 const peakHours = [
   { name: 'เช้า', time: '06:00-10:00', value: 42, hint: 'ช่วงไปทำงาน' },
   { name: 'กลางวัน', time: '10:00-14:00', value: 28, hint: 'พักและเติมพลัง' },
@@ -140,11 +148,29 @@ function toThaiDate(date: string) {
   }).format(new Date(`${date}T00:00:00`))
 }
 
+function fileToBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = String(reader.result)
+      resolve(result.includes(',') ? result.split(',')[1] : result)
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
 function App() {
   const [logs, setLogs] = useState(initialLogs)
   const [expenses, setExpenses] = useState(initialExpenses)
   const [query, setQuery] = useState('')
   const [range, setRange] = useState('เดือนนี้')
+  const [proofFile, setProofFile] = useState<File | null>(null)
+  const [proofPreview, setProofPreview] = useState('')
+  const [uploadStatus, setUploadStatus] = useState('')
+  const [uploadEndpoint, setUploadEndpoint] = useState(() => {
+    return localStorage.getItem('grabUploadEndpoint') || defaultUploadEndpoint || ''
+  })
   const [form, setForm] = useState({
     date: '2026-06-15',
     start: '16:00',
@@ -220,11 +246,79 @@ function App() {
     [logs],
   )
 
-  function addEntry(event: FormEvent<HTMLFormElement>) {
+  function selectProof(file: File | null) {
+    if (proofPreview) {
+      URL.revokeObjectURL(proofPreview)
+    }
+
+    if (!file) {
+      setProofFile(null)
+      setProofPreview('')
+      setUploadStatus('')
+      return
+    }
+
+    setProofFile(file)
+    setProofPreview(URL.createObjectURL(file))
+    setUploadStatus(uploadEndpoint ? 'พร้อมอัปโหลดขึ้น Drive ตอนบันทึก' : 'พร้อมแนบในรายการ รอตั้งค่า Google Drive sync')
+  }
+
+  async function uploadProof(file: File) {
+    if (!uploadEndpoint) {
+      return {
+        url: proofPreview,
+        status: 'local' as const,
+      }
+    }
+
+    const imageBase64 = await fileToBase64(file)
+    const response = await fetch(uploadEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        fileName: file.name,
+        mimeType: file.type,
+        imageBase64,
+        date: form.date,
+        start: form.start,
+        end: form.end,
+        grabFood: Number(form.grabFood),
+        expressBike: Number(form.expressBike),
+        expressShop: Number(form.expressShop),
+        income: Number(form.income),
+        fuel: Number(form.fuel),
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error('อัปโหลดรูปไม่สำเร็จ')
+    }
+
+    const payload = (await response.json()) as { ok?: boolean; fileUrl?: string; error?: string }
+    if (payload.ok === false) {
+      throw new Error(payload.error || 'อัปโหลดรูปไม่สำเร็จ')
+    }
+
+    return {
+      url: payload.fileUrl ?? proofPreview,
+      status: 'uploaded' as const,
+    }
+  }
+
+  async function addEntry(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setUploadStatus(proofFile ? 'กำลังบันทึกหลักฐาน...' : '')
     const startHour = Number(form.start.split(':')[0]) + Number(form.start.split(':')[1]) / 60
     const endHour = Number(form.end.split(':')[0]) + Number(form.end.split(':')[1]) / 60
     const hours = Math.max(endHour - startHour, 0)
+    let proof: Awaited<ReturnType<typeof uploadProof>> | null
+
+    try {
+      proof = proofFile ? await uploadProof(proofFile) : null
+    } catch (error) {
+      setUploadStatus(error instanceof Error ? error.message : 'อัปโหลดรูปไม่สำเร็จ')
+      return
+    }
 
     const nextLog: DailyLog = {
       id: Date.now(),
@@ -239,7 +333,10 @@ function App() {
       income: Number(form.income),
       rating: 4.98,
       acceptance: 96,
-      note: 'เพิ่มจากเว็บแอป',
+      note: proof ? 'เพิ่มจากเว็บแอป พร้อมหลักฐานรูป' : 'เพิ่มจากเว็บแอป',
+      proofName: proofFile?.name,
+      proofUrl: proof?.url,
+      proofStatus: proof?.status,
     }
 
     const nextExpense: Expense = {
@@ -256,6 +353,9 @@ function App() {
 
     setLogs((current) => [nextLog, ...current])
     setExpenses((current) => [nextExpense, ...current])
+    setUploadStatus(proof?.status === 'uploaded' ? 'บันทึกแล้ว รูปถูกอัปโหลดขึ้น Drive' : proof ? 'บันทึกแล้ว แนบรูปในหน้านี้เรียบร้อย' : 'บันทึกแล้ว')
+    setProofFile(null)
+    setProofPreview('')
   }
 
   return (
@@ -407,6 +507,7 @@ function App() {
                     <th>รายได้</th>
                     <th>รายได้/ชม.</th>
                     <th>Rating</th>
+                    <th>หลักฐาน</th>
                     <th>หมายเหตุ</th>
                   </tr>
                 </thead>
@@ -424,6 +525,16 @@ function App() {
                           <Star size={14} fill="currentColor" />
                           {log.rating ?? '-'}
                         </span>
+                      </td>
+                      <td>
+                        {log.proofUrl ? (
+                          <a className="proof-link" href={log.proofUrl} target="_blank" rel="noreferrer">
+                            <Image size={14} />
+                            {log.proofStatus === 'uploaded' ? 'Drive' : 'รูปแนบ'}
+                          </a>
+                        ) : (
+                          '-'
+                        )}
                       </td>
                       <td>{log.note}</td>
                     </tr>
@@ -479,6 +590,43 @@ function App() {
                 ค่าน้ำมัน
                 <input value={form.fuel} onChange={(event) => setForm({ ...form, fuel: event.target.value })} inputMode="decimal" />
               </label>
+              <label>
+                URL ซิงก์ Drive/Sheet
+                <input
+                  value={uploadEndpoint}
+                  onChange={(event) => {
+                    const value = event.target.value.trim()
+                    setUploadEndpoint(value)
+                    if (value) {
+                      localStorage.setItem('grabUploadEndpoint', value)
+                    } else {
+                      localStorage.removeItem('grabUploadEndpoint')
+                    }
+                  }}
+                  placeholder="วาง URL จาก Google Apps Script"
+                />
+              </label>
+              <div className="proof-uploader">
+                <label className="proof-drop">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={(event) => selectProof(event.target.files?.[0] ?? null)}
+                  />
+                  <Upload size={18} />
+                  <span>{proofFile ? proofFile.name : 'ถ่ายหรืออัปโหลดรูปหลักฐาน'}</span>
+                </label>
+                {proofPreview ? (
+                  <div className="proof-preview">
+                    <img src={proofPreview} alt="ตัวอย่างรูปหลักฐาน" />
+                    <button type="button" onClick={() => selectProof(null)} aria-label="ลบรูปหลักฐาน">
+                      <X size={16} />
+                    </button>
+                  </div>
+                ) : null}
+                {uploadStatus ? <p className="upload-status">{uploadStatus}</p> : null}
+              </div>
               <button className="primary-button full" type="submit">
                 <Plus size={18} />
                 เพิ่มบันทึก

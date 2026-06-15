@@ -320,7 +320,7 @@ input {
 
 table {
   width: 100%;
-  min-width: 860px;
+  min-width: 950px;
   border-collapse: collapse;
 }
 
@@ -351,6 +351,19 @@ td {
   font-weight: 760;
 }
 
+.proof-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #2563eb;
+  font-weight: 760;
+  text-decoration: none;
+}
+
+.proof-link:hover {
+  text-decoration: underline;
+}
+
 .quick-entry form {
   display: grid;
   gap: 12px;
@@ -372,6 +385,73 @@ td {
   border: 1px solid #d0d5dd;
   border-radius: 8px;
   background: #fff;
+}
+
+.proof-uploader {
+  display: grid;
+  gap: 10px;
+}
+
+.proof-drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  padding: 12px;
+  border: 1px dashed #98a2b3;
+  border-radius: 8px;
+  color: #344054;
+  background: #f8fafc;
+  cursor: pointer;
+}
+
+.proof-drop input {
+  display: none;
+}
+
+.proof-drop span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.proof-preview {
+  position: relative;
+  overflow: hidden;
+  min-height: 150px;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+  background: #101828;
+}
+
+.proof-preview img {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+}
+
+.proof-preview button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  color: #101828;
+  background: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+}
+
+.upload-status {
+  margin: 0;
+  color: #067647;
+  font-size: 12px;
+  font-weight: 760;
 }
 
 .field-pair {
