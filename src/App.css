@@ -80,6 +80,14 @@
   justify-content: flex-end;
 }
 
+.mobile-tabs {
+  display: none;
+}
+
+.mobile-tab-panel {
+  display: initial;
+}
+
 button,
 select,
 input {
@@ -378,7 +386,8 @@ td {
   gap: 12px;
 }
 
-.quick-entry label {
+.quick-entry label,
+.settings-form label {
   display: grid;
   gap: 7px;
   color: #475467;
@@ -393,7 +402,8 @@ td {
   line-height: 1.35;
 }
 
-.quick-entry input {
+.quick-entry input,
+.settings-form input {
   width: 100%;
   height: 42px;
   box-sizing: border-box;
@@ -411,6 +421,12 @@ td {
   border: 1px solid #d0d5dd;
   border-radius: 8px;
   background: #fff;
+}
+
+.settings-form {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 .proof-uploader {
@@ -580,6 +596,55 @@ td {
   .panel-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .mobile-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+    margin: 0 -4px 12px;
+    padding: 8px 4px;
+    background: rgba(246, 248, 251, 0.94);
+    backdrop-filter: blur(10px);
+  }
+
+  .mobile-tabs button {
+    min-height: 42px;
+    padding: 0 4px;
+    border: 1px solid #d0d5dd;
+    border-radius: 8px;
+    color: #344054;
+    background: #fff;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .mobile-tabs button.active {
+    color: #fff;
+    border-color: #16a34a;
+    background: #16a34a;
+    box-shadow: 0 8px 20px rgba(22, 163, 74, 0.18);
+  }
+
+  .mobile-tab-panel {
+    display: none;
+  }
+
+  .mobile-tab-panel.is-active {
+    display: grid;
+  }
+
+  .panel.mobile-tab-panel.is-active {
+    display: block;
+  }
+
+  .target-panel.mobile-tab-panel.is-active,
+  .metric-grid.mobile-tab-panel.is-active,
+  .split-grid.mobile-tab-panel.is-active {
+    display: grid;
   }
 
   .topbar-actions,

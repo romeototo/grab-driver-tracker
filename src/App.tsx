@@ -113,6 +113,16 @@ const categories = [
   'อื่น ๆ',
 ]
 
+const mobileTabs = [
+  { id: 'entry', label: 'บันทึก' },
+  { id: 'summary', label: 'สรุป' },
+  { id: 'charts', label: 'กราฟ' },
+  { id: 'logs', label: 'รายการ' },
+  { id: 'settings', label: 'ตั้งค่า' },
+] as const
+
+type MobileTab = (typeof mobileTabs)[number]['id']
+
 const defaultUploadEndpoint =
   (import.meta.env.VITE_UPLOAD_ENDPOINT as string | undefined) ||
   'https://script.google.com/macros/s/AKfycbznbyhMhtrApnRSwu3989i63shNuzjUbb_pGj9QI87CDVstGVY0zHnFIYJyMpd4hUxr/exec'
@@ -179,6 +189,7 @@ function App() {
   const [expenses, setExpenses] = useState(initialExpenses)
   const [query, setQuery] = useState('')
   const [range, setRange] = useState('เดือนนี้')
+  const [activeTab, setActiveTab] = useState<MobileTab>('entry')
   const [proofFile, setProofFile] = useState<File | null>(null)
   const [proofPreview, setProofPreview] = useState('')
   const [uploadStatus, setUploadStatus] = useState('')
@@ -415,7 +426,20 @@ function App() {
         </div>
       </header>
 
-      <section className="metric-grid" aria-label="สรุปผลรวม">
+      <nav className="mobile-tabs" aria-label="เมนูหลักบนมือถือ">
+        {mobileTabs.map((tab) => (
+          <button
+            key={tab.id}
+            className={activeTab === tab.id ? 'active' : ''}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      <section className={`metric-grid mobile-tab-panel ${activeTab === 'summary' ? 'is-active' : ''}`} aria-label="สรุปผลรวม">
         <MetricCard icon={<Wallet size={20} />} label="รายได้รวม" value={formatBaht(summary.income)} trend="+ จากชีตล่าสุด" />
         <MetricCard icon={<Bike size={20} />} label="งานทั้งหมด" value={currency.format(summary.jobs)} trend={`${decimal.format(summary.jobs / Math.max(logs.length, 1))} งาน/วัน`} />
         <MetricCard icon={<Clock3 size={20} />} label="ชั่วโมงออนไลน์" value={decimal.format(summary.hours)} trend={`${formatBaht(summary.incomePerHour)}/ชั่วโมง`} />
@@ -425,7 +449,7 @@ function App() {
 
       <section className="workspace">
         <div className="main-column">
-          <section className="panel revenue-panel">
+          <section className={`panel revenue-panel mobile-tab-panel ${activeTab === 'charts' ? 'is-active' : ''}`}>
             <div className="panel-heading">
               <div>
                 <h2>ภาพรวมรายได้และกำไร</h2>
@@ -455,7 +479,7 @@ function App() {
             </div>
           </section>
 
-          <div className="split-grid">
+          <div className={`split-grid mobile-tab-panel ${activeTab === 'charts' ? 'is-active' : ''}`}>
             <section className="panel">
               <div className="panel-heading compact">
                 <div>
@@ -508,7 +532,7 @@ function App() {
             </section>
           </div>
 
-          <section className="panel table-panel">
+          <section className={`panel table-panel mobile-tab-panel ${activeTab === 'logs' ? 'is-active' : ''}`}>
             <div className="panel-heading">
               <div>
                 <h2>บันทึกรายวัน</h2>
@@ -569,7 +593,7 @@ function App() {
         </div>
 
         <aside className="side-column">
-          <section className="panel quick-entry">
+          <section className={`panel quick-entry mobile-tab-panel ${activeTab === 'entry' ? 'is-active' : ''}`}>
             <div className="panel-heading compact">
               <div>
                 <h2>บันทึกด่วน</h2>
@@ -622,6 +646,63 @@ function App() {
                 ค่าน้ำมัน
                 <input value={form.fuel} onChange={(event) => setForm({ ...form, fuel: event.target.value })} inputMode="decimal" />
               </label>
+              <div className="proof-uploader">
+                <label className="proof-drop">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={(event) => selectProof(event.target.files?.[0] ?? null)}
+                  />
+                  <Upload size={18} />
+                  <span>{proofFile ? proofFile.name : 'ถ่ายหรืออัปโหลดรูปหลักฐาน'}</span>
+                </label>
+                {proofPreview ? (
+                  <div className="proof-preview">
+                    <img src={proofPreview} alt="ตัวอย่างรูปหลักฐาน" />
+                    <button type="button" onClick={() => selectProof(null)} aria-label="ลบรูปหลักฐาน">
+                      <X size={16} />
+                    </button>
+                  </div>
+                ) : null}
+                {uploadStatus ? <p className="upload-status">{uploadStatus}</p> : null}
+              </div>
+              <button className="primary-button full" type="submit" disabled={isSaving}>
+                <Plus size={18} />
+                {isSaving ? 'กำลังบันทึก...' : 'เพิ่มบันทึก'}
+              </button>
+            </form>
+          </section>
+
+          <section className={`panel target-panel mobile-tab-panel ${activeTab === 'summary' ? 'is-active' : ''}`}>
+            <div className="target-ring" style={{ '--progress': `${summary.targetPercent}%` } as CSSProperties}>
+              <span>{Math.round(summary.targetPercent)}%</span>
+            </div>
+            <div>
+              <h2>สถานะเป้าหมาย</h2>
+              <p>รายได้ {formatBaht(summary.income)} จากเป้า {formatBaht(target.income)}</p>
+            </div>
+            <div className="target-list">
+              <div>
+                <span>เป้างาน</span>
+                <strong>{target.jobs} งาน</strong>
+              </div>
+              <div>
+                <span>ทำแล้ว</span>
+                <strong>{summary.jobs} งาน</strong>
+              </div>
+            </div>
+          </section>
+
+          <section className={`panel cost-panel mobile-tab-panel ${activeTab === 'settings' ? 'is-active' : ''}`}>
+            <div className="panel-heading compact">
+              <div>
+                <h2>ตั้งค่าและรายจ่าย</h2>
+                <p>ตั้งค่าการซิงก์และดูต้นทุนคงที่จากชีต</p>
+              </div>
+              <Fuel size={19} />
+            </div>
+            <div className="settings-form">
               <label>
                 URL ซิงก์ Drive/Sheet
                 <input
@@ -656,61 +737,6 @@ function App() {
                 />
                 <span className="field-hint">ไม่ต้องกรอก ถ้ายังไม่ได้ตั้ง WEBHOOK_TOKEN ใน Apps Script</span>
               </label>
-              <div className="proof-uploader">
-                <label className="proof-drop">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={(event) => selectProof(event.target.files?.[0] ?? null)}
-                  />
-                  <Upload size={18} />
-                  <span>{proofFile ? proofFile.name : 'ถ่ายหรืออัปโหลดรูปหลักฐาน'}</span>
-                </label>
-                {proofPreview ? (
-                  <div className="proof-preview">
-                    <img src={proofPreview} alt="ตัวอย่างรูปหลักฐาน" />
-                    <button type="button" onClick={() => selectProof(null)} aria-label="ลบรูปหลักฐาน">
-                      <X size={16} />
-                    </button>
-                  </div>
-                ) : null}
-                {uploadStatus ? <p className="upload-status">{uploadStatus}</p> : null}
-              </div>
-              <button className="primary-button full" type="submit" disabled={isSaving}>
-                <Plus size={18} />
-                {isSaving ? 'กำลังบันทึก...' : 'เพิ่มบันทึก'}
-              </button>
-            </form>
-          </section>
-
-          <section className="panel target-panel">
-            <div className="target-ring" style={{ '--progress': `${summary.targetPercent}%` } as CSSProperties}>
-              <span>{Math.round(summary.targetPercent)}%</span>
-            </div>
-            <div>
-              <h2>สถานะเป้าหมาย</h2>
-              <p>รายได้ {formatBaht(summary.income)} จากเป้า {formatBaht(target.income)}</p>
-            </div>
-            <div className="target-list">
-              <div>
-                <span>เป้างาน</span>
-                <strong>{target.jobs} งาน</strong>
-              </div>
-              <div>
-                <span>ทำแล้ว</span>
-                <strong>{summary.jobs} งาน</strong>
-              </div>
-            </div>
-          </section>
-
-          <section className="panel cost-panel">
-            <div className="panel-heading compact">
-              <div>
-                <h2>รายจ่าย</h2>
-                <p>ต้นทุนคงที่จากชีต</p>
-              </div>
-              <Fuel size={19} />
             </div>
             <CostRow label="ค่าเสื่อมรถ/วัน" value={50} />
             <CostRow label="ประกัน/วัน" value={30} />
