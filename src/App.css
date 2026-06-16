@@ -435,9 +435,11 @@ td {
 }
 
 .proof-drop {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   min-height: 52px;
   padding: 12px;
   border: 1px dashed #98a2b3;
@@ -448,7 +450,12 @@ td {
 }
 
 .proof-drop input {
-  display: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.01;
+  cursor: pointer;
 }
 
 .proof-drop span {

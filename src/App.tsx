@@ -191,6 +191,7 @@ function App() {
   const [range, setRange] = useState('เดือนนี้')
   const [activeTab, setActiveTab] = useState<MobileTab>('entry')
   const [proofFile, setProofFile] = useState<File | null>(null)
+  const [proofInputKey, setProofInputKey] = useState(0)
   const [proofPreview, setProofPreview] = useState('')
   const [uploadStatus, setUploadStatus] = useState('')
   const [uploadEndpoint, setUploadEndpoint] = useState(() => {
@@ -283,6 +284,7 @@ function App() {
       setProofFile(null)
       setProofPreview('')
       setUploadStatus('')
+      setProofInputKey((current) => current + 1)
       return
     }
 
@@ -389,6 +391,7 @@ function App() {
     setUploadStatus(proof?.status === 'uploaded' ? 'บันทึกแล้ว รูปถูกอัปโหลดขึ้น Drive' : proof ? 'บันทึกแล้ว แนบรูปในหน้านี้เรียบร้อย' : 'บันทึกแล้ว')
     setProofFile(null)
     setProofPreview('')
+    setProofInputKey((current) => current + 1)
     setIsSaving(false)
   }
 
@@ -649,6 +652,7 @@ function App() {
               <div className="proof-uploader">
                 <label className="proof-drop">
                   <input
+                    key={proofInputKey}
                     type="file"
                     accept="image/*"
                     capture="environment"
