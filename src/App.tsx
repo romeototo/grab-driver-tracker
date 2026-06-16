@@ -29,7 +29,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 import './App.css'
 
@@ -125,7 +125,7 @@ type MobileTab = (typeof mobileTabs)[number]['id']
 
 const defaultUploadEndpoint =
   (import.meta.env.VITE_UPLOAD_ENDPOINT as string | undefined) ||
-  'https://script.google.com/macros/s/AKfycbznbyhMhtrApnRSwu3989i63shNuzjUbb_pGj9QI87CDVstGVY0zHnFIYJyMpd4hUxr/exec'
+  'https://script.google.com/macros/s/AKfycby9K_FlqAa84tP0v8HWVOJNcycJLAwPD7bkol3cq5m25xziky4qGfe97DL4AHvJENyn/exec'
 
 const peakHours = [
   { name: 'เช้า', time: '06:00-10:00', value: 42, hint: 'ช่วงไปทำงาน' },
@@ -184,6 +184,32 @@ function fileToBase64(file: File) {
   })
 }
 
+function isDateInRange(dateStr: string, range: string) {
+  const date = new Date(`${dateStr}T00:00:00`)
+  const dateMs = date.getTime()
+  
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  
+  if (range === 'วันนี้') {
+    return dateMs === today
+  }
+  
+  if (range === 'สัปดาห์นี้') {
+    const nowDay = now.getDay()
+    const diff = now.getDate() - nowDay + (nowDay === 0 ? -6 : 1)
+    const monday = new Date(now.getFullYear(), now.getMonth(), diff).getTime()
+    return dateMs >= monday
+  }
+  
+  if (range === 'เดือนนี้') {
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime()
+    return dateMs >= firstDayOfMonth
+  }
+  
+  return true
+}
+
 function App() {
   const [logs, setLogs] = useState(initialLogs)
   const [expenses, setExpenses] = useState(initialExpenses)
@@ -199,6 +225,7 @@ function App() {
   })
   const [syncToken, setSyncToken] = useState(() => localStorage.getItem('grabSyncToken') || '')
   const [isSaving, setIsSaving] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
   const [form, setForm] = useState({
     category: 'รายได้ Grab',
     date: '2026-06-15',
@@ -211,22 +238,100 @@ function App() {
     fuel: '120',
   })
 
+  const expenseLabel = useMemo(() => {
+    if (form.category === 'รายได้ Grab' || form.category === 'ค่าน้ำมัน') return 'ค่าน้ำมัน (บาท)'
+    if (form.category === 'ค่าอาหาร') return 'ค่าอาหาร (บาท)'
+    if (form.category === 'น้ำ/เครื่องดื่ม') return 'ค่าน้ำ/เครื่องดื่ม (บาท)'
+    if (form.category === 'ค่าซ่อมรถ') return 'ค่าซ่อมรถ (บาท)'
+    if (form.category === 'ค่าโทร/เน็ต') return 'ค่าโทร/ค่าเน็ต (บาท)'
+    return 'ค่าใช้จ่ายอื่น ๆ (บาท)'
+  }, [form.category])
+
+  async function fetchSheetData() {
+    if (!uploadEndpoint) return
+    setIsSyncing(true)
+    setUploadStatus('กำลังดึงข้อมูลจาก Google Sheets...')
+    try {
+      const url = `${uploadEndpoint}?token=${encodeURIComponent(syncToken)}`
+      const response = await fetch(url)
+      if (!response.ok) throw new Error('ดึงข้อมูลจาก Sheet ไม่สำเร็จ')
+      
+      const payload = (await response.json()) as {
+        ok?: boolean
+        logs?: DailyLog[]
+        expenses?: Expense[]
+        error?: string
+      }
+      
+      if (payload.ok === false) {
+        throw new Error(payload.error || 'ดึงข้อมูลไม่สำเร็จ')
+      }
+      
+      if (payload.logs) {
+        const mappedLogs = payload.logs.map((log: any) => ({
+          ...log,
+          grabFood: Number(log.grabFood || 0),
+          expressBike: Number(log.expressBike || 0),
+          expressShop: Number(log.expressShop || 0),
+          hours: Number(log.hours || 0),
+          income: Number(log.income || 0),
+        }))
+        setLogs(mappedLogs)
+      }
+      
+      if (payload.expenses) {
+        const mappedExpenses = payload.expenses.map((exp: any) => ({
+          ...exp,
+          fuel: Number(exp.fuel || 0),
+          food: Number(exp.food || 0),
+          drinks: Number(exp.drinks || 0),
+          repair: Number(exp.repair || 0),
+          phone: Number(exp.phone || 0),
+          depreciation: Number(exp.depreciation || 0),
+          insurance: Number(exp.insurance || 0),
+          other: Number(exp.other || 0),
+        }))
+        setExpenses(mappedExpenses)
+      }
+      
+      setUploadStatus('ดึงข้อมูลล่าสุดจาก Google Sheets สำเร็จ')
+    } catch (error) {
+      setUploadStatus(error instanceof Error ? error.message : 'ซิงก์ข้อมูลผิดพลาด')
+    } finally {
+      setIsSyncing(false)
+    }
+  }
+
+  useEffect(() => {
+    if (uploadEndpoint) {
+      fetchSheetData()
+    }
+  }, [uploadEndpoint])
+
+  const dateFilteredLogs = useMemo(() => {
+    return logs.filter((log) => isDateInRange(log.date, range))
+  }, [logs, range])
+
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter((exp) => isDateInRange(exp.date, range))
+  }, [expenses, range])
+
   const filteredLogs = useMemo(() => {
     const normalized = query.trim().toLowerCase()
-    return logs.filter((log) => {
+    return dateFilteredLogs.filter((log) => {
       if (!normalized) return true
       return [toThaiDate(log.date), log.note ?? '', log.start, log.end]
         .join(' ')
         .toLowerCase()
         .includes(normalized)
     })
-  }, [logs, query])
+  }, [dateFilteredLogs, query])
 
   const summary = useMemo(() => {
-    const income = logs.reduce((sum, log) => sum + log.income, 0)
-    const hours = logs.reduce((sum, log) => sum + log.hours, 0)
-    const jobs = logs.reduce((sum, log) => sum + jobsTotal(log), 0)
-    const expense = expenses.reduce((sum, item) => sum + expenseTotal(item), 0)
+    const income = dateFilteredLogs.reduce((sum, log) => sum + log.income, 0)
+    const hours = dateFilteredLogs.reduce((sum, log) => sum + log.hours, 0)
+    const jobs = dateFilteredLogs.reduce((sum, log) => sum + jobsTotal(log), 0)
+    const expense = filteredExpenses.reduce((sum, item) => sum + expenseTotal(item), 0)
     return {
       income,
       hours,
@@ -237,42 +342,55 @@ function App() {
       profitPerHour: hours > 0 ? (income - expense) / hours : 0,
       targetPercent: target.income > 0 ? Math.min((income / target.income) * 100, 100) : 0,
     }
-  }, [expenses, logs])
+  }, [filteredExpenses, dateFilteredLogs])
 
-  const chartData = useMemo(
-    () =>
-      logs.map((log) => {
-        const expense = expenses.find((item) => item.date === log.date)
-        const cost = expense ? expenseTotal(expense) : 0
-        return {
-          date: toThaiDate(log.date),
-          income: log.income,
-          profit: log.income - cost,
-          jobs: jobsTotal(log),
-        }
-      }),
-    [expenses, logs],
-  )
+  const chartData = useMemo(() => {
+    const dailyData: { [date: string]: { income: number; jobs: number; cost: number } } = {}
+    
+    dateFilteredLogs.forEach((log) => {
+      if (!dailyData[log.date]) {
+        dailyData[log.date] = { income: 0, jobs: 0, cost: 0 }
+      }
+      dailyData[log.date].income += log.income
+      dailyData[log.date].jobs += jobsTotal(log)
+    })
+    
+    filteredExpenses.forEach((exp) => {
+      if (!dailyData[exp.date]) {
+        dailyData[exp.date] = { income: 0, jobs: 0, cost: 0 }
+      }
+      dailyData[exp.date].cost += expenseTotal(exp)
+    })
+    
+    return Object.keys(dailyData)
+      .sort((a, b) => a.localeCompare(b))
+      .map((date) => ({
+        date: toThaiDate(date),
+        income: dailyData[date].income,
+        profit: dailyData[date].income - dailyData[date].cost,
+        jobs: dailyData[date].jobs,
+      }))
+  }, [filteredExpenses, dateFilteredLogs])
 
   const jobBreakdown = useMemo(
     () => [
       {
         name: 'GrabFood',
-        value: logs.reduce((sum, log) => sum + log.grabFood, 0),
+        value: dateFilteredLogs.reduce((sum, log) => sum + log.grabFood, 0),
         color: '#16a34a',
       },
       {
         name: 'Express Bike',
-        value: logs.reduce((sum, log) => sum + log.expressBike, 0),
+        value: dateFilteredLogs.reduce((sum, log) => sum + log.expressBike, 0),
         color: '#2563eb',
       },
       {
         name: 'Express Shop',
-        value: logs.reduce((sum, log) => sum + log.expressShop, 0),
+        value: dateFilteredLogs.reduce((sum, log) => sum + log.expressShop, 0),
         color: '#f59e0b',
       },
     ],
-    [logs],
+    [dateFilteredLogs],
   )
 
   function selectProof(file: File | null) {
@@ -293,7 +411,7 @@ function App() {
     setUploadStatus(uploadEndpoint ? 'พร้อมอัปโหลดขึ้น Drive ตอนบันทึก' : 'พร้อมแนบในรายการ รอตั้งค่า Google Drive sync')
   }
 
-  async function uploadProof(file: File) {
+  async function syncEntryToSheet(file: File | null) {
     if (!uploadEndpoint) {
       return {
         url: proofPreview,
@@ -301,13 +419,22 @@ function App() {
       }
     }
 
-    const imageBase64 = await fileToBase64(file)
+    let imageBase64 = ''
+    let fileName = ''
+    let mimeType = ''
+
+    if (file) {
+      imageBase64 = await fileToBase64(file)
+      fileName = file.name
+      mimeType = file.type
+    }
+
     const response = await fetch(uploadEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({
-        fileName: file.name,
-        mimeType: file.type,
+        fileName,
+        mimeType,
         imageBase64,
         token: syncToken,
         category: form.category,
@@ -323,33 +450,33 @@ function App() {
     })
 
     if (!response.ok) {
-      throw new Error('อัปโหลดรูปไม่สำเร็จ')
+      throw new Error(file ? 'อัปโหลดรูปและบันทึกไม่สำเร็จ' : 'บันทึกข้อมูลไม่สำเร็จ')
     }
 
     const payload = (await response.json()) as { ok?: boolean; fileUrl?: string; error?: string }
     if (payload.ok === false) {
-      throw new Error(payload.error || 'อัปโหลดรูปไม่สำเร็จ')
+      throw new Error(payload.error || 'บันทึกข้อมูลไม่สำเร็จ')
     }
 
     return {
-      url: payload.fileUrl ?? proofPreview,
-      status: 'uploaded' as const,
+      url: payload.fileUrl || (file ? proofPreview : ''),
+      status: payload.fileUrl ? ('uploaded' as const) : ('local' as const),
     }
   }
 
   async function addEntry(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setIsSaving(true)
-    setUploadStatus(proofFile ? 'กำลังบันทึกหลักฐาน...' : '')
+    setUploadStatus(uploadEndpoint ? 'กำลังส่งข้อมูล...' : 'กำลังบันทึกข้อมูลชั่วคราว...')
     const startHour = Number(form.start.split(':')[0]) + Number(form.start.split(':')[1]) / 60
     const endHour = Number(form.end.split(':')[0]) + Number(form.end.split(':')[1]) / 60
     const hours = Math.max(endHour - startHour, 0)
-    let proof: Awaited<ReturnType<typeof uploadProof>> | null
+    let result: Awaited<ReturnType<typeof syncEntryToSheet>> | null = null
 
     try {
-      proof = proofFile ? await uploadProof(proofFile) : null
+      result = await syncEntryToSheet(proofFile)
     } catch (error) {
-      setUploadStatus(error instanceof Error ? error.message : 'อัปโหลดรูปไม่สำเร็จ')
+      setUploadStatus(error instanceof Error ? error.message : 'บันทึกข้อมูลไม่สำเร็จ')
       setIsSaving(false)
       return
     }
@@ -368,10 +495,10 @@ function App() {
       income: Number(form.income),
       rating: 4.98,
       acceptance: 96,
-      note: proof ? `${form.category} พร้อมหลักฐานรูป` : form.category,
+      note: result?.url ? `${form.category} พร้อมหลักฐานรูป` : form.category,
       proofName: proofFile?.name,
-      proofUrl: proof?.url,
-      proofStatus: proof?.status,
+      proofUrl: result?.url || undefined,
+      proofStatus: result?.status || undefined,
     }
 
     const nextExpense: Expense = {
@@ -386,9 +513,41 @@ function App() {
       other: 0,
     }
 
+    // Set correct expense based on category
+    if (form.category === 'ค่าอาหาร') {
+      nextExpense.food = Number(form.fuel)
+      nextExpense.fuel = 0
+    } else if (form.category === 'น้ำ/เครื่องดื่ม') {
+      nextExpense.drinks = Number(form.fuel)
+      nextExpense.fuel = 0
+    } else if (form.category === 'ค่าซ่อมรถ') {
+      nextExpense.repair = Number(form.fuel)
+      nextExpense.fuel = 0
+    } else if (form.category === 'ค่าโทร/เน็ต') {
+      nextExpense.phone = Number(form.fuel)
+      nextExpense.fuel = 0
+    } else if (form.category === 'อื่น ๆ') {
+      nextExpense.other = Number(form.fuel)
+      nextExpense.fuel = 0
+    } else if (form.category === 'รายได้ Grab') {
+      // Keep nextExpense.fuel as fuel
+    } else {
+      nextExpense.fuel = 0
+    }
+
     setLogs((current) => [nextLog, ...current])
-    setExpenses((current) => [nextExpense, ...current])
-    setUploadStatus(proof?.status === 'uploaded' ? 'บันทึกแล้ว รูปถูกอัปโหลดขึ้น Drive' : proof ? 'บันทึกแล้ว แนบรูปในหน้านี้เรียบร้อย' : 'บันทึกแล้ว')
+    
+    if (Number(form.fuel) > 0) {
+      setExpenses((current) => [nextExpense, ...current])
+    }
+
+    setUploadStatus(
+      result?.status === 'uploaded'
+        ? 'บันทึกสำเร็จและซิงก์เข้า Google Sheets เรียบร้อย'
+        : uploadEndpoint
+        ? 'บันทึกสำเร็จและซิงก์ข้อมูลแล้ว'
+        : 'บันทึกแล้ว (แสดงผลชั่วคราว รอตั้งค่า URL ซิงก์)'
+    )
     setProofFile(null)
     setProofPreview('')
     setProofInputKey((current) => current + 1)
@@ -418,9 +577,9 @@ function App() {
               <option>ทั้งหมด</option>
             </select>
           </label>
-          <button className="ghost-button" type="button">
-            <RefreshCw size={17} />
-            ซิงก์ชีต
+          <button className="ghost-button" type="button" onClick={fetchSheetData} disabled={isSyncing}>
+            <RefreshCw size={17} className={isSyncing ? 'spin-icon' : ''} />
+            {isSyncing ? 'กำลังซิงก์...' : 'ซิงก์ชีต'}
           </button>
           <button className="primary-button" type="button">
             <Plus size={18} />
@@ -646,7 +805,7 @@ function App() {
                 <input value={form.income} onChange={(event) => setForm({ ...form, income: event.target.value })} inputMode="decimal" />
               </label>
               <label>
-                ค่าน้ำมัน
+                {expenseLabel}
                 <input value={form.fuel} onChange={(event) => setForm({ ...form, fuel: event.target.value })} inputMode="decimal" />
               </label>
               <div className="proof-uploader">

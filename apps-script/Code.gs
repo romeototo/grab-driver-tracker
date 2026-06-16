@@ -2,25 +2,139 @@ const SPREADSHEET_ID = '1LvEzLjFCDDXTVTU5MYd0zlr2X6_1MR35MklC0Ow2EDg'
 const DAILY_SHEET_NAME = '📋 บันทึกรายวัน'
 const EXPENSE_SHEET_NAME = '💸 รายจ่าย'
 
+function doGet(event) {
+  try {
+    const token = event && event.parameter ? event.parameter.token : ''
+    const expectedToken = PropertiesService.getScriptProperties().getProperty('WEBHOOK_TOKEN')
+
+    if (expectedToken && token !== expectedToken) {
+      return jsonResponse({
+        ok: false,
+        error: 'Invalid sync PIN',
+      })
+    }
+
+    const logs = getDailyLogs()
+    const expenses = getExpenses()
+
+    return jsonResponse({
+      ok: true,
+      logs,
+      expenses,
+    })
+  } catch (error) {
+    return jsonResponse({
+      ok: false,
+      error: String(error && error.message ? error.message : error),
+    })
+  }
+}
+
+function getDailyLogs() {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DAILY_SHEET_NAME)
+  if (!sheet) return []
+  const data = sheet.getDataRange().getValues()
+  if (data.length <= 1) return []
+
+  const logs = []
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i]
+    if (!row[0]) continue
+
+    let dateStr = ''
+    if (row[0] instanceof Date) {
+      dateStr = Utilities.formatDate(row[0], Session.getScriptTimeZone() || 'Asia/Bangkok', 'yyyy-MM-dd')
+    } else {
+      dateStr = String(row[0]).split('T')[0]
+    }
+
+    const noteCol = String(row[16] || '')
+    let proofUrl = ''
+    if (noteCol.includes('หลักฐาน: http')) {
+      const match = noteCol.match(/หลักฐาน:\s*(https?:\/\/[^\s]+)/)
+      if (match) {
+        proofUrl = match[1]
+      }
+    }
+
+    logs.push({
+      id: i,
+      date: dateStr,
+      start: String(row[1] || ''),
+      end: String(row[2] || ''),
+      hours: Number(row[3] || 0),
+      grabFood: Number(row[4] || 0),
+      expressBike: Number(row[5] || 0),
+      expressShop: Number(row[6] || 0),
+      income: Number(row[9] || 0),
+      rating: Number(row[11] || 4.98),
+      acceptance: Number(row[13] || 96),
+      note: noteCol,
+      proofUrl: proofUrl || undefined,
+      proofStatus: proofUrl ? 'uploaded' : undefined,
+    })
+  }
+  return logs.reverse()
+}
+
+function getExpenses() {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(EXPENSE_SHEET_NAME)
+  if (!sheet) return []
+  const data = sheet.getDataRange().getValues()
+  if (data.length <= 1) return []
+
+  const expenses = []
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i]
+    if (!row[0]) continue
+
+    let dateStr = ''
+    if (row[0] instanceof Date) {
+      dateStr = Utilities.formatDate(row[0], Session.getScriptTimeZone() || 'Asia/Bangkok', 'yyyy-MM-dd')
+    } else {
+      dateStr = String(row[0]).split('T')[0]
+    }
+
+    expenses.push({
+      date: dateStr,
+      fuel: Number(row[1] || 0),
+      food: Number(row[2] || 0),
+      drinks: Number(row[3] || 0),
+      repair: Number(row[4] || 0),
+      phone: Number(row[5] || 0),
+      depreciation: Number(row[6] || 0),
+      insurance: Number(row[7] || 0),
+      other: Number(row[8] || 0),
+    })
+  }
+  return expenses.reverse()
+}
+
 function doPost(event) {
   try {
     const payload = JSON.parse(event.postData.contents)
     verifyToken(payload)
 
-    const folder = getUploadFolder()
-    const bytes = Utilities.base64Decode(payload.imageBase64)
-    const blob = Utilities.newBlob(bytes, payload.mimeType, payload.fileName)
-    const file = folder.createFile(blob)
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW)
+    let fileUrl = ''
+    let fileId = ''
 
-    const fileUrl = file.getUrl()
+    if (payload.imageBase64 && payload.mimeType && payload.fileName) {
+      const folder = getUploadFolder()
+      const bytes = Utilities.base64Decode(payload.imageBase64)
+      const blob = Utilities.newBlob(bytes, payload.mimeType, payload.fileName)
+      const file = folder.createFile(blob)
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW)
+      fileUrl = file.getUrl()
+      fileId = file.getId()
+    }
+
     appendDailyLog(payload, fileUrl)
     appendExpense(payload, fileUrl)
 
     return jsonResponse({
       ok: true,
-      fileUrl,
-      fileId: file.getId(),
+      fileUrl: fileUrl || undefined,
+      fileId: fileId || undefined,
     })
   } catch (error) {
     return jsonResponse({
@@ -80,7 +194,7 @@ function appendDailyLog(payload, fileUrl) {
     '',
     '',
     '',
-    `หลักฐาน: ${fileUrl}`,
+    fileUrl ? `หลักฐาน: ${fileUrl}` : (payload.note || 'เพิ่มจากเว็บแอป'),
   ])
 }
 
@@ -95,6 +209,12 @@ function appendExpense(payload, fileUrl) {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(EXPENSE_SHEET_NAME)
   const expense = buildExpenseRow(category, fuel)
 
+  // Calculate fixed costs only for Grab income entries
+  const isGrabIncome = (category === 'รายได้ Grab')
+  const dep = isGrabIncome ? 50 : 0
+  const ins = isGrabIncome ? 30 : 0
+  const total = fuel + dep + ins
+
   sheet.appendRow([
     payload.date || new Date(),
     expense.fuel,
@@ -102,11 +222,11 @@ function appendExpense(payload, fileUrl) {
     expense.drinks,
     expense.repair,
     expense.phone,
-    50,
-    30,
+    dep,
+    ins,
     expense.other,
-    fuel + 50 + 30,
-    `${category} | หลักฐาน: ${fileUrl}`,
+    total,
+    fileUrl ? `${category} | หลักฐาน: ${fileUrl}` : (payload.note || category),
   ])
 }
 
