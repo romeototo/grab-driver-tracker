@@ -650,9 +650,9 @@ function App() {
                 <input value={form.fuel} onChange={(event) => setForm({ ...form, fuel: event.target.value })} inputMode="decimal" />
               </label>
               <div className="proof-uploader">
-                <div className="proof-drop">
+                <div className="proof-heading">
                   <Upload size={18} />
-                  <span>{proofFile ? proofFile.name : 'ถ่ายหรืออัปโหลดรูปหลักฐาน'}</span>
+                  <span>รูปหลักฐาน</span>
                 </div>
                 <input
                   key={proofInputKey}
@@ -664,7 +664,9 @@ function App() {
                   }}
                   onChange={(event) => selectProof(event.target.files?.[0] ?? null)}
                 />
-                <span className="field-hint">บน iPhone ให้แตะปุ่มเลือกไฟล์ แล้วเลือก ถ่ายรูป หรือ คลังรูปภาพ</span>
+                <span className="field-hint">
+                  {proofFile ? `เลือกแล้ว: ${proofFile.name}` : 'แตะช่องเลือกไฟล์ แล้วเลือก ถ่ายรูป หรือ คลังรูปภาพ'}
+                </span>
                 {proofPreview ? (
                   <div className="proof-preview">
                     <img src={proofPreview} alt="ตัวอย่างรูปหลักฐาน" />
