@@ -101,7 +101,9 @@ const target = {
   jobs: 22,
 }
 
-const defaultUploadEndpoint = import.meta.env.VITE_UPLOAD_ENDPOINT as string | undefined
+const defaultUploadEndpoint =
+  (import.meta.env.VITE_UPLOAD_ENDPOINT as string | undefined) ||
+  'https://script.google.com/macros/s/AKfycbznbyhMhtrApnRSwu3989i63shNuzjUbb_pGj9QI87CDVstGVY0zHnFIYJyMpd4hUxr/exec'
 
 const peakHours = [
   { name: 'เช้า', time: '06:00-10:00', value: 42, hint: 'ช่วงไปทำงาน' },
