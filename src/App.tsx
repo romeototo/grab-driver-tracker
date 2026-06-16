@@ -210,6 +210,13 @@ function isDateInRange(dateStr: string, range: string) {
   return true
 }
 
+function getCurrentTime() {
+  const now = new Date()
+  const hours = String(now.getHours()).padStart(2, '0')
+  const minutes = String(now.getMinutes()).padStart(2, '0')
+  return `${hours}:${minutes}`
+}
+
 function App() {
   const [logs, setLogs] = useState(initialLogs)
   const [expenses, setExpenses] = useState(initialExpenses)
@@ -237,6 +244,17 @@ function App() {
     income: '420',
     fuel: '120',
   })
+
+  function adjustCounter(field: 'grabFood' | 'expressBike' | 'expressShop', amount: number) {
+    setForm((current) => {
+      const val = parseInt(current[field], 10) || 0
+      const nextVal = Math.max(val + amount, 0)
+      return {
+        ...current,
+        [field]: String(nextVal),
+      }
+    })
+  }
 
   const expenseLabel = useMemo(() => {
     if (form.category === 'รายได้ Grab' || form.category === 'ค่าน้ำมัน') return 'ค่าน้ำมัน (บาท)'
@@ -429,6 +447,7 @@ function App() {
       mimeType = file.type
     }
 
+    const isGrab = form.category === 'รายได้ Grab'
     const response = await fetch(uploadEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -439,12 +458,12 @@ function App() {
         token: syncToken,
         category: form.category,
         date: form.date,
-        start: form.start,
-        end: form.end,
-        grabFood: Number(form.grabFood),
-        expressBike: Number(form.expressBike),
-        expressShop: Number(form.expressShop),
-        income: Number(form.income),
+        start: isGrab ? form.start : '',
+        end: isGrab ? form.end : '',
+        grabFood: isGrab ? Number(form.grabFood) : 0,
+        expressBike: isGrab ? Number(form.expressBike) : 0,
+        expressShop: isGrab ? Number(form.expressShop) : 0,
+        income: isGrab ? Number(form.income) : 0,
         fuel: Number(form.fuel),
       }),
     })
@@ -468,9 +487,11 @@ function App() {
     event.preventDefault()
     setIsSaving(true)
     setUploadStatus(uploadEndpoint ? 'กำลังส่งข้อมูล...' : 'กำลังบันทึกข้อมูลชั่วคราว...')
+    
+    const isGrab = form.category === 'รายได้ Grab'
     const startHour = Number(form.start.split(':')[0]) + Number(form.start.split(':')[1]) / 60
     const endHour = Number(form.end.split(':')[0]) + Number(form.end.split(':')[1]) / 60
-    const hours = Math.max(endHour - startHour, 0)
+    const hours = isGrab ? Math.max(endHour - startHour, 0) : 0
     let result: Awaited<ReturnType<typeof syncEntryToSheet>> | null = null
 
     try {
@@ -485,16 +506,16 @@ function App() {
       id: Date.now(),
       category: form.category,
       date: form.date,
-      start: form.start,
-      end: form.end,
+      start: isGrab ? form.start : '',
+      end: isGrab ? form.end : '',
       hours: Number(hours.toFixed(1)),
-      grabFood: Number(form.grabFood),
-      expressBike: Number(form.expressBike),
-      expressShop: Number(form.expressShop),
+      grabFood: isGrab ? Number(form.grabFood) : 0,
+      expressBike: isGrab ? Number(form.expressBike) : 0,
+      expressShop: isGrab ? Number(form.expressShop) : 0,
       distance: 0,
-      income: Number(form.income),
-      rating: 4.98,
-      acceptance: 96,
+      income: isGrab ? Number(form.income) : 0,
+      rating: isGrab ? 4.98 : undefined,
+      acceptance: isGrab ? 96 : undefined,
       note: result?.url ? `${form.category} พร้อมหลักฐานรูป` : form.category,
       proofName: proofFile?.name,
       proofUrl: result?.url || undefined,
@@ -776,34 +797,56 @@ function App() {
                 วันที่
                 <input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} />
               </label>
-              <div className="field-pair">
-                <label>
-                  เริ่มออนไลน์
-                  <input type="time" value={form.start} onChange={(event) => setForm({ ...form, start: event.target.value })} />
-                </label>
-                <label>
-                  เลิกออนไลน์
-                  <input type="time" value={form.end} onChange={(event) => setForm({ ...form, end: event.target.value })} />
-                </label>
-              </div>
-              <div className="field-pair">
-                <label>
-                  GrabFood
-                  <input value={form.grabFood} onChange={(event) => setForm({ ...form, grabFood: event.target.value })} inputMode="numeric" />
-                </label>
-                <label>
-                  Express Bike
-                  <input value={form.expressBike} onChange={(event) => setForm({ ...form, expressBike: event.target.value })} inputMode="numeric" />
-                </label>
-              </div>
-              <label>
-                Express Shop
-                <input value={form.expressShop} onChange={(event) => setForm({ ...form, expressShop: event.target.value })} inputMode="numeric" />
-              </label>
-              <label>
-                รายได้รวม
-                <input value={form.income} onChange={(event) => setForm({ ...form, income: event.target.value })} inputMode="decimal" />
-              </label>
+              {form.category === 'รายได้ Grab' && (
+                <>
+                  <div className="field-pair">
+                    <label>
+                      เริ่มออนไลน์
+                      <div className="time-input-wrap">
+                        <input type="time" value={form.start} onChange={(event) => setForm({ ...form, start: event.target.value })} />
+                        <button className="time-now-btn" type="button" onClick={() => setForm({ ...form, start: getCurrentTime() })}>ตอนนี้</button>
+                      </div>
+                    </label>
+                    <label>
+                      เลิกออนไลน์
+                      <div className="time-input-wrap">
+                        <input type="time" value={form.end} onChange={(event) => setForm({ ...form, end: event.target.value })} />
+                        <button className="time-now-btn" type="button" onClick={() => setForm({ ...form, end: getCurrentTime() })}>ตอนนี้</button>
+                      </div>
+                    </label>
+                  </div>
+                  <div className="field-pair">
+                    <label>
+                      GrabFood
+                      <div className="counter-input-wrap">
+                        <button type="button" onClick={() => adjustCounter('grabFood', -1)}>-</button>
+                        <input value={form.grabFood} onChange={(event) => setForm({ ...form, grabFood: event.target.value })} inputMode="numeric" />
+                        <button type="button" onClick={() => adjustCounter('grabFood', 1)}>+</button>
+                      </div>
+                    </label>
+                    <label>
+                      Express Bike
+                      <div className="counter-input-wrap">
+                        <button type="button" onClick={() => adjustCounter('expressBike', -1)}>-</button>
+                        <input value={form.expressBike} onChange={(event) => setForm({ ...form, expressBike: event.target.value })} inputMode="numeric" />
+                        <button type="button" onClick={() => adjustCounter('expressBike', 1)}>+</button>
+                      </div>
+                    </label>
+                  </div>
+                  <label>
+                    Express Shop
+                    <div className="counter-input-wrap">
+                      <button type="button" onClick={() => adjustCounter('expressShop', -1)}>-</button>
+                      <input value={form.expressShop} onChange={(event) => setForm({ ...form, expressShop: event.target.value })} inputMode="numeric" />
+                      <button type="button" onClick={() => adjustCounter('expressShop', 1)}>+</button>
+                    </div>
+                  </label>
+                  <label>
+                    รายได้รวม
+                    <input value={form.income} onChange={(event) => setForm({ ...form, income: event.target.value })} inputMode="decimal" />
+                  </label>
+                </>
+              )}
               <label>
                 {expenseLabel}
                 <input value={form.fuel} onChange={(event) => setForm({ ...form, fuel: event.target.value })} inputMode="decimal" />
