@@ -650,17 +650,21 @@ function App() {
                 <input value={form.fuel} onChange={(event) => setForm({ ...form, fuel: event.target.value })} inputMode="decimal" />
               </label>
               <div className="proof-uploader">
-                <label className="proof-drop">
-                  <input
-                    key={proofInputKey}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={(event) => selectProof(event.target.files?.[0] ?? null)}
-                  />
+                <div className="proof-drop">
                   <Upload size={18} />
                   <span>{proofFile ? proofFile.name : 'ถ่ายหรืออัปโหลดรูปหลักฐาน'}</span>
-                </label>
+                </div>
+                <input
+                  key={proofInputKey}
+                  className="proof-native-input"
+                  type="file"
+                  accept="image/*"
+                  onClick={(event) => {
+                    event.currentTarget.value = ''
+                  }}
+                  onChange={(event) => selectProof(event.target.files?.[0] ?? null)}
+                />
+                <span className="field-hint">บน iPhone ให้แตะปุ่มเลือกไฟล์ แล้วเลือก ถ่ายรูป หรือ คลังรูปภาพ</span>
                 {proofPreview ? (
                   <div className="proof-preview">
                     <img src={proofPreview} alt="ตัวอย่างรูปหลักฐาน" />
