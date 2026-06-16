@@ -35,6 +35,7 @@ import './App.css'
 
 type DailyLog = {
   id: number
+  category: string
   date: string
   start: string
   end: string
@@ -67,6 +68,7 @@ type Expense = {
 const initialLogs: DailyLog[] = [
   {
     id: 1,
+    category: 'รายได้ Grab',
     date: '2026-06-14',
     start: '16:43',
     end: '22:53',
@@ -100,6 +102,16 @@ const target = {
   income: 800,
   jobs: 22,
 }
+
+const categories = [
+  'รายได้ Grab',
+  'ค่าน้ำมัน',
+  'ค่าอาหาร',
+  'น้ำ/เครื่องดื่ม',
+  'ค่าซ่อมรถ',
+  'ค่าโทร/เน็ต',
+  'อื่น ๆ',
+]
 
 const defaultUploadEndpoint =
   (import.meta.env.VITE_UPLOAD_ENDPOINT as string | undefined) ||
@@ -173,7 +185,10 @@ function App() {
   const [uploadEndpoint, setUploadEndpoint] = useState(() => {
     return localStorage.getItem('grabUploadEndpoint') || defaultUploadEndpoint || ''
   })
+  const [syncToken, setSyncToken] = useState(() => localStorage.getItem('grabSyncToken') || '')
+  const [isSaving, setIsSaving] = useState(false)
   const [form, setForm] = useState({
+    category: 'รายได้ Grab',
     date: '2026-06-15',
     start: '16:00',
     end: '22:00',
@@ -281,6 +296,8 @@ function App() {
         fileName: file.name,
         mimeType: file.type,
         imageBase64,
+        token: syncToken,
+        category: form.category,
         date: form.date,
         start: form.start,
         end: form.end,
@@ -309,6 +326,7 @@ function App() {
 
   async function addEntry(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setIsSaving(true)
     setUploadStatus(proofFile ? 'กำลังบันทึกหลักฐาน...' : '')
     const startHour = Number(form.start.split(':')[0]) + Number(form.start.split(':')[1]) / 60
     const endHour = Number(form.end.split(':')[0]) + Number(form.end.split(':')[1]) / 60
@@ -319,11 +337,13 @@ function App() {
       proof = proofFile ? await uploadProof(proofFile) : null
     } catch (error) {
       setUploadStatus(error instanceof Error ? error.message : 'อัปโหลดรูปไม่สำเร็จ')
+      setIsSaving(false)
       return
     }
 
     const nextLog: DailyLog = {
       id: Date.now(),
+      category: form.category,
       date: form.date,
       start: form.start,
       end: form.end,
@@ -335,7 +355,7 @@ function App() {
       income: Number(form.income),
       rating: 4.98,
       acceptance: 96,
-      note: proof ? 'เพิ่มจากเว็บแอป พร้อมหลักฐานรูป' : 'เพิ่มจากเว็บแอป',
+      note: proof ? `${form.category} พร้อมหลักฐานรูป` : form.category,
       proofName: proofFile?.name,
       proofUrl: proof?.url,
       proofStatus: proof?.status,
@@ -358,6 +378,7 @@ function App() {
     setUploadStatus(proof?.status === 'uploaded' ? 'บันทึกแล้ว รูปถูกอัปโหลดขึ้น Drive' : proof ? 'บันทึกแล้ว แนบรูปในหน้านี้เรียบร้อย' : 'บันทึกแล้ว')
     setProofFile(null)
     setProofPreview('')
+    setIsSaving(false)
   }
 
   return (
@@ -557,6 +578,15 @@ function App() {
             </div>
             <form onSubmit={addEntry}>
               <label>
+                ประเภทรายการ
+                <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>
+                  {categories.map((category) => (
+                    <option key={category}>{category}</option>
+                  ))}
+                </select>
+                <span className="field-hint">ใช้แยกรูปหลักฐานและลงช่องรายจ่ายในชีตให้ถูกหมวด</span>
+              </label>
+              <label>
                 วันที่
                 <input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} />
               </label>
@@ -608,6 +638,24 @@ function App() {
                   placeholder="วาง URL จาก Google Apps Script"
                 />
               </label>
+              <label>
+                PIN ซิงก์
+                <input
+                  value={syncToken}
+                  onChange={(event) => {
+                    const value = event.target.value.trim()
+                    setSyncToken(value)
+                    if (value) {
+                      localStorage.setItem('grabSyncToken', value)
+                    } else {
+                      localStorage.removeItem('grabSyncToken')
+                    }
+                  }}
+                  placeholder="ตั้งเมื่อเปิดใช้ token ใน Apps Script"
+                  inputMode="numeric"
+                />
+                <span className="field-hint">ไม่ต้องกรอก ถ้ายังไม่ได้ตั้ง WEBHOOK_TOKEN ใน Apps Script</span>
+              </label>
               <div className="proof-uploader">
                 <label className="proof-drop">
                   <input
@@ -629,9 +677,9 @@ function App() {
                 ) : null}
                 {uploadStatus ? <p className="upload-status">{uploadStatus}</p> : null}
               </div>
-              <button className="primary-button full" type="submit">
+              <button className="primary-button full" type="submit" disabled={isSaving}>
                 <Plus size={18} />
-                เพิ่มบันทึก
+                {isSaving ? 'กำลังบันทึก...' : 'เพิ่มบันทึก'}
               </button>
             </form>
           </section>

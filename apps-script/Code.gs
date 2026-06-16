@@ -5,6 +5,8 @@ const EXPENSE_SHEET_NAME = '💸 รายจ่าย'
 function doPost(event) {
   try {
     const payload = JSON.parse(event.postData.contents)
+    verifyToken(payload)
+
     const folder = getUploadFolder()
     const bytes = Utilities.base64Decode(payload.imageBase64)
     const blob = Utilities.newBlob(bytes, payload.mimeType, payload.fileName)
@@ -25,6 +27,14 @@ function doPost(event) {
       ok: false,
       error: String(error && error.message ? error.message : error),
     })
+  }
+}
+
+function verifyToken(payload) {
+  const expectedToken = PropertiesService.getScriptProperties().getProperty('WEBHOOK_TOKEN')
+
+  if (expectedToken && payload.token !== expectedToken) {
+    throw new Error('Invalid sync PIN')
   }
 }
 
@@ -75,6 +85,7 @@ function appendDailyLog(payload, fileUrl) {
 }
 
 function appendExpense(payload, fileUrl) {
+  const category = payload.category || 'ค่าน้ำมัน'
   const fuel = Number(payload.fuel || 0)
 
   if (!fuel) {
@@ -82,19 +93,48 @@ function appendExpense(payload, fileUrl) {
   }
 
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(EXPENSE_SHEET_NAME)
+  const expense = buildExpenseRow(category, fuel)
+
   sheet.appendRow([
     payload.date || new Date(),
-    fuel,
-    0,
-    0,
-    0,
-    0,
+    expense.fuel,
+    expense.food,
+    expense.drinks,
+    expense.repair,
+    expense.phone,
     50,
     30,
-    0,
+    expense.other,
     fuel + 50 + 30,
-    `หลักฐาน: ${fileUrl}`,
+    `${category} | หลักฐาน: ${fileUrl}`,
   ])
+}
+
+function buildExpenseRow(category, amount) {
+  const row = {
+    fuel: 0,
+    food: 0,
+    drinks: 0,
+    repair: 0,
+    phone: 0,
+    other: 0,
+  }
+
+  if (category === 'ค่าอาหาร') {
+    row.food = amount
+  } else if (category === 'น้ำ/เครื่องดื่ม') {
+    row.drinks = amount
+  } else if (category === 'ค่าซ่อมรถ') {
+    row.repair = amount
+  } else if (category === 'ค่าโทร/เน็ต') {
+    row.phone = amount
+  } else if (category === 'อื่น ๆ') {
+    row.other = amount
+  } else {
+    row.fuel = amount
+  }
+
+  return row
 }
 
 function computeHours(start, end) {
