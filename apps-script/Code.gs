@@ -1,11 +1,12 @@
 const SPREADSHEET_ID = '1LvEzLjFCDDXTVTU5MYd0zlr2X6_1MR35MklC0Ow2EDg'
 const DAILY_SHEET_NAME = '📋 บันทึกรายวัน'
 const EXPENSE_SHEET_NAME = '💸 รายจ่าย'
+const DEFAULT_WEBHOOK_TOKEN = '260332'
 
 function doGet(event) {
   try {
     const token = event && event.parameter ? event.parameter.token : ''
-    const expectedToken = PropertiesService.getScriptProperties().getProperty('WEBHOOK_TOKEN')
+    const expectedToken = PropertiesService.getScriptProperties().getProperty('WEBHOOK_TOKEN') || DEFAULT_WEBHOOK_TOKEN
 
     if (expectedToken && token !== expectedToken) {
       return jsonResponse({
@@ -145,7 +146,7 @@ function doPost(event) {
 }
 
 function verifyToken(payload) {
-  const expectedToken = PropertiesService.getScriptProperties().getProperty('WEBHOOK_TOKEN')
+  const expectedToken = PropertiesService.getScriptProperties().getProperty('WEBHOOK_TOKEN') || DEFAULT_WEBHOOK_TOKEN
 
   if (expectedToken && payload.token !== expectedToken) {
     throw new Error('Invalid sync PIN')

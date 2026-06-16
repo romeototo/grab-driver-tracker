@@ -29,7 +29,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 import './App.css'
 
@@ -64,6 +64,9 @@ type Expense = {
   insurance: number
   other: number
 }
+
+type SheetLog = Partial<DailyLog>
+type SheetExpense = Partial<Expense>
 
 const initialLogs: DailyLog[] = [
   {
@@ -126,6 +129,7 @@ type MobileTab = (typeof mobileTabs)[number]['id']
 const defaultUploadEndpoint =
   (import.meta.env.VITE_UPLOAD_ENDPOINT as string | undefined) ||
   'https://script.google.com/macros/s/AKfycby9K_FlqAa84tP0v8HWVOJNcycJLAwPD7bkol3cq5m25xziky4qGfe97DL4AHvJENyn/exec'
+const defaultSyncToken = '260332'
 
 const peakHours = [
   { name: 'เช้า', time: '06:00-10:00', value: 42, hint: 'ช่วงไปทำงาน' },
@@ -230,7 +234,7 @@ function App() {
   const [uploadEndpoint, setUploadEndpoint] = useState(() => {
     return localStorage.getItem('grabUploadEndpoint') || defaultUploadEndpoint || ''
   })
-  const [syncToken, setSyncToken] = useState(() => localStorage.getItem('grabSyncToken') || '')
+  const [syncToken, setSyncToken] = useState(() => localStorage.getItem('grabSyncToken') || defaultSyncToken)
   const [isSaving, setIsSaving] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const [form, setForm] = useState({
@@ -276,8 +280,8 @@ function App() {
       
       const payload = (await response.json()) as {
         ok?: boolean
-        logs?: DailyLog[]
-        expenses?: Expense[]
+        logs?: SheetLog[]
+        expenses?: SheetExpense[]
         error?: string
       }
       
@@ -286,20 +290,27 @@ function App() {
       }
       
       if (payload.logs) {
-        const mappedLogs = payload.logs.map((log: any) => ({
+        const mappedLogs = payload.logs.map((log, index) => ({
           ...log,
+          id: Number(log.id || Date.now() + index),
+          category: log.category || 'รายได้ Grab',
+          date: log.date || new Date().toISOString().slice(0, 10),
+          start: log.start || '',
+          end: log.end || '',
           grabFood: Number(log.grabFood || 0),
           expressBike: Number(log.expressBike || 0),
           expressShop: Number(log.expressShop || 0),
           hours: Number(log.hours || 0),
+          distance: Number(log.distance || 0),
           income: Number(log.income || 0),
         }))
         setLogs(mappedLogs)
       }
       
       if (payload.expenses) {
-        const mappedExpenses = payload.expenses.map((exp: any) => ({
+        const mappedExpenses = payload.expenses.map((exp) => ({
           ...exp,
+          date: exp.date || new Date().toISOString().slice(0, 10),
           fuel: Number(exp.fuel || 0),
           food: Number(exp.food || 0),
           drinks: Number(exp.drinks || 0),
@@ -319,12 +330,6 @@ function App() {
       setIsSyncing(false)
     }
   }
-
-  useEffect(() => {
-    if (uploadEndpoint) {
-      fetchSheetData()
-    }
-  }, [uploadEndpoint])
 
   const dateFilteredLogs = useMemo(() => {
     return logs.filter((log) => isDateInRange(log.date, range))
@@ -492,7 +497,7 @@ function App() {
     const startHour = Number(form.start.split(':')[0]) + Number(form.start.split(':')[1]) / 60
     const endHour = Number(form.end.split(':')[0]) + Number(form.end.split(':')[1]) / 60
     const hours = isGrab ? Math.max(endHour - startHour, 0) : 0
-    let result: Awaited<ReturnType<typeof syncEntryToSheet>> | null = null
+    let result: Awaited<ReturnType<typeof syncEntryToSheet>>
 
     try {
       result = await syncEntryToSheet(proofFile)
