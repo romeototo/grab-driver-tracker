@@ -65,7 +65,10 @@ type Expense = {
   other: number
 }
 
-type SheetLog = Partial<DailyLog>
+type SheetLog = Partial<DailyLog> & {
+  food?: number
+  mart?: number
+}
 type SheetExpense = Partial<Expense>
 
 const initialLogs: DailyLog[] = [
@@ -301,12 +304,11 @@ function App() {
     end: '22:00',
     grabFood: '0',
     expressBike: '8',
-    expressShop: '0',
     income: '420',
     fuel: '120',
   })
 
-  function adjustCounter(field: 'grabFood' | 'expressBike' | 'expressShop', amount: number) {
+  function adjustCounter(field: 'grabFood' | 'expressBike', amount: number) {
     setForm((current) => {
       const val = parseInt(current[field], 10) || 0
       const nextVal = Math.max(val + amount, 0)
@@ -359,8 +361,8 @@ function App() {
               date,
               start: normalizeSheetTime(log.start),
               end: normalizeSheetTime(log.end),
-              grabFood: toNumber(log.grabFood),
-              expressBike: toNumber(log.expressBike),
+              grabFood: toNumber(log.food ?? log.grabFood),
+              expressBike: toNumber(log.mart ?? log.expressBike),
               expressShop: toNumber(log.expressShop),
               hours: toNumber(log.hours),
               distance: toNumber(log.distance),
@@ -470,19 +472,14 @@ function App() {
   const jobBreakdown = useMemo(
     () => [
       {
-        name: 'GrabFood',
+        name: 'Food',
         value: dateFilteredLogs.reduce((sum, log) => sum + log.grabFood, 0),
         color: '#16a34a',
       },
       {
-        name: 'Express Bike',
+        name: 'Mart',
         value: dateFilteredLogs.reduce((sum, log) => sum + log.expressBike, 0),
         color: '#2563eb',
-      },
-      {
-        name: 'Express Shop',
-        value: dateFilteredLogs.reduce((sum, log) => sum + log.expressShop, 0),
-        color: '#f59e0b',
       },
     ],
     [dateFilteredLogs],
@@ -537,9 +534,11 @@ function App() {
         date: form.date,
         start: isGrab ? form.start : '',
         end: isGrab ? form.end : '',
+        food: isGrab ? Number(form.grabFood) : 0,
+        mart: isGrab ? Number(form.expressBike) : 0,
         grabFood: isGrab ? Number(form.grabFood) : 0,
         expressBike: isGrab ? Number(form.expressBike) : 0,
-        expressShop: isGrab ? Number(form.expressShop) : 0,
+        expressShop: 0,
         income: isGrab ? Number(form.income) : 0,
         fuel: Number(form.fuel),
       }),
@@ -588,7 +587,7 @@ function App() {
       hours: Number(hours.toFixed(1)),
       grabFood: isGrab ? Number(form.grabFood) : 0,
       expressBike: isGrab ? Number(form.expressBike) : 0,
-      expressShop: isGrab ? Number(form.expressShop) : 0,
+      expressShop: 0,
       distance: 0,
       income: isGrab ? Number(form.income) : 0,
       rating: isGrab ? 4.98 : undefined,
@@ -894,7 +893,7 @@ function App() {
                   </div>
                   <div className="field-pair">
                     <label>
-                      GrabFood
+                      Food
                       <div className="counter-input-wrap">
                         <button type="button" onClick={() => adjustCounter('grabFood', -1)}>-</button>
                         <input value={form.grabFood} onChange={(event) => setForm({ ...form, grabFood: event.target.value })} inputMode="numeric" />
@@ -902,7 +901,7 @@ function App() {
                       </div>
                     </label>
                     <label>
-                      Express Bike
+                      Mart
                       <div className="counter-input-wrap">
                         <button type="button" onClick={() => adjustCounter('expressBike', -1)}>-</button>
                         <input value={form.expressBike} onChange={(event) => setForm({ ...form, expressBike: event.target.value })} inputMode="numeric" />
@@ -910,14 +909,6 @@ function App() {
                       </div>
                     </label>
                   </div>
-                  <label>
-                    Express Shop
-                    <div className="counter-input-wrap">
-                      <button type="button" onClick={() => adjustCounter('expressShop', -1)}>-</button>
-                      <input value={form.expressShop} onChange={(event) => setForm({ ...form, expressShop: event.target.value })} inputMode="numeric" />
-                      <button type="button" onClick={() => adjustCounter('expressShop', 1)}>+</button>
-                    </div>
-                  </label>
                   <label>
                     รายได้รวม
                     <input value={form.income} onChange={(event) => setForm({ ...form, income: event.target.value })} inputMode="decimal" />

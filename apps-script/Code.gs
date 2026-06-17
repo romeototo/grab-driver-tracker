@@ -51,6 +51,8 @@ function getDailyLogs() {
         start: normalizeTime(row[1]),
         end: normalizeTime(row[2]),
         hours: toNumber(row[3]),
+        food: toNumber(row[4]),
+        mart: toNumber(row[5]),
         grabFood: toNumber(row[4]),
         expressBike: toNumber(row[5]),
         expressShop: toNumber(row[6]),
@@ -159,10 +161,10 @@ function appendDailyLog(payload, fileUrl) {
   const start = payload.start || ''
   const end = payload.end || ''
   const hours = computeHours(start, end)
-  const grabFood = Number(payload.grabFood || 0)
-  const expressBike = Number(payload.expressBike || 0)
-  const expressShop = Number(payload.expressShop || 0)
-  const totalJobs = grabFood + expressBike + expressShop
+  const food = Number(payload.food || payload.grabFood || 0)
+  const mart = Number(payload.mart || payload.expressBike || 0)
+  const otherJobs = Number(payload.expressShop || 0)
+  const totalJobs = food + mart + otherJobs
   const income = Number(payload.income || 0)
   const incomePerHour = hours > 0 ? income / hours : 0
 
@@ -171,9 +173,9 @@ function appendDailyLog(payload, fileUrl) {
     start,
     end,
     hours,
-    grabFood,
-    expressBike,
-    expressShop,
+    food,
+    mart,
+    otherJobs,
     totalJobs,
     '',
     income,
