@@ -65,7 +65,9 @@ function getDailyLogs() {
         proofStatus: proofUrl ? 'uploaded' : undefined,
       }
     })
-    .filter(Boolean)
+    .filter(function(log) {
+      return log && (log.income > 0 || log.hours > 0 || (log.grabFood + log.expressBike + log.expressShop) > 0)
+    })
     .reverse()
 }
 

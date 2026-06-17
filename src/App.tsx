@@ -51,10 +51,13 @@ type DailyLog = {
   proofName?: string
   proofUrl?: string
   proofStatus?: 'local' | 'uploaded'
+  syncStatus?: 'local' | 'synced'
 }
 
 type Expense = {
+  id?: number
   date: string
+  category?: string
   fuel: number
   food: number
   drinks: number
@@ -63,6 +66,9 @@ type Expense = {
   depreciation: number
   insurance: number
   other: number
+  note?: string
+  proofUrl?: string
+  syncStatus?: 'local' | 'synced'
 }
 
 type SheetLog = Partial<DailyLog> & {
@@ -87,6 +93,7 @@ const initialLogs: DailyLog[] = [
     rating: 4.98,
     acceptance: 96,
     note: 'ข้อมูลตั้งต้นจาก Google Sheet',
+    syncStatus: 'synced',
   },
 ]
 
@@ -101,6 +108,9 @@ const initialExpenses: Expense[] = [
     depreciation: 50,
     insurance: 30,
     other: 0,
+    category: 'รายได้ Grab',
+    note: 'ข้อมูลตั้งต้นจาก Google Sheet',
+    syncStatus: 'synced',
   },
 ]
 
@@ -156,6 +166,14 @@ function formatBaht(value: number) {
   return `${currency.format(value)} ฿`
 }
 
+function todayIso() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 function expenseTotal(expense: Expense) {
   return (
     expense.fuel +
@@ -169,8 +187,24 @@ function expenseTotal(expense: Expense) {
   )
 }
 
+function expenseCategory(expense: Expense) {
+  if (expense.category === 'รายได้ Grab') return 'ต้นทุนงาน Grab'
+  if (expense.category) return expense.category
+  if (expense.fuel > 0) return 'ค่าน้ำมัน'
+  if (expense.food > 0) return 'ค่าอาหาร'
+  if (expense.drinks > 0) return 'น้ำ/เครื่องดื่ม'
+  if (expense.repair > 0) return 'ค่าซ่อมรถ'
+  if (expense.phone > 0) return 'ค่าโทร/เน็ต'
+  if (expense.other > 0) return 'อื่น ๆ'
+  return 'รายจ่าย'
+}
+
 function jobsTotal(log: DailyLog) {
   return log.grabFood + log.expressBike + log.expressShop
+}
+
+function hasWorkActivity(log: DailyLog) {
+  return log.income > 0 || log.hours > 0 || jobsTotal(log) > 0
 }
 
 function toThaiDate(date: string) {
@@ -371,6 +405,11 @@ function getCurrentTime() {
   return `${hours}:${minutes}`
 }
 
+function syncLabel(status?: 'local' | 'synced') {
+  if (status === 'synced') return 'ซิงก์แล้ว'
+  return 'บันทึกในเครื่อง'
+}
+
 function App() {
   const [logs, setLogs] = useState(restoreLogs)
   const [expenses, setExpenses] = useState(restoreExpenses)
@@ -389,7 +428,7 @@ function App() {
   const [isSyncing, setIsSyncing] = useState(false)
   const [form, setForm] = useState({
     category: 'รายได้ Grab',
-    date: '2026-06-15',
+    date: todayIso(),
     start: '16:00',
     end: '22:00',
     grabFood: '0',
@@ -467,6 +506,7 @@ function App() {
               income: toNumber(log.income),
               rating: log.rating === undefined ? undefined : toNumber(log.rating),
               acceptance: log.acceptance === undefined ? undefined : toNumber(log.acceptance),
+              syncStatus: 'synced',
             }
           })
           .filter((log): log is DailyLog => Boolean(log))
@@ -489,6 +529,9 @@ function App() {
               depreciation: toNumber(exp.depreciation),
               insurance: toNumber(exp.insurance),
               other: toNumber(exp.other),
+              category: exp.category,
+              note: exp.note,
+              syncStatus: 'synced',
             }
           })
           .filter((exp): exp is Expense => Boolean(exp))
@@ -507,25 +550,40 @@ function App() {
     return logs.filter((log) => isDateInRange(log.date, range))
   }, [logs, range])
 
+  const dateFilteredWorkLogs = useMemo(() => {
+    return dateFilteredLogs.filter((log) => log.category === 'รายได้ Grab' && hasWorkActivity(log))
+  }, [dateFilteredLogs])
+
   const filteredExpenses = useMemo(() => {
     return expenses.filter((exp) => isDateInRange(exp.date, range))
   }, [expenses, range])
 
   const filteredLogs = useMemo(() => {
     const normalized = query.trim().toLowerCase()
-    return dateFilteredLogs.filter((log) => {
+    return dateFilteredWorkLogs.filter((log) => {
       if (!normalized) return true
       return [toThaiDate(log.date), log.note ?? '', log.start, log.end]
         .join(' ')
         .toLowerCase()
         .includes(normalized)
     })
-  }, [dateFilteredLogs, query])
+  }, [dateFilteredWorkLogs, query])
+
+  const filteredExpenseRows = useMemo(() => {
+    const normalized = query.trim().toLowerCase()
+    return filteredExpenses.filter((expense) => {
+      if (!normalized) return true
+      return [toThaiDate(expense.date), expenseCategory(expense), expense.note ?? '']
+        .join(' ')
+        .toLowerCase()
+        .includes(normalized)
+    })
+  }, [filteredExpenses, query])
 
   const summary = useMemo(() => {
-    const income = dateFilteredLogs.reduce((sum, log) => sum + log.income, 0)
-    const hours = dateFilteredLogs.reduce((sum, log) => sum + log.hours, 0)
-    const jobs = dateFilteredLogs.reduce((sum, log) => sum + jobsTotal(log), 0)
+    const income = dateFilteredWorkLogs.reduce((sum, log) => sum + log.income, 0)
+    const hours = dateFilteredWorkLogs.reduce((sum, log) => sum + log.hours, 0)
+    const jobs = dateFilteredWorkLogs.reduce((sum, log) => sum + jobsTotal(log), 0)
     const expense = filteredExpenses.reduce((sum, item) => sum + expenseTotal(item), 0)
     return {
       income,
@@ -537,12 +595,12 @@ function App() {
       profitPerHour: hours > 0 ? (income - expense) / hours : 0,
       targetPercent: target.income > 0 ? Math.min((income / target.income) * 100, 100) : 0,
     }
-  }, [filteredExpenses, dateFilteredLogs])
+  }, [filteredExpenses, dateFilteredWorkLogs])
 
   const chartData = useMemo(() => {
     const dailyData: { [date: string]: { income: number; jobs: number; cost: number } } = {}
     
-    dateFilteredLogs.forEach((log) => {
+    dateFilteredWorkLogs.forEach((log) => {
       if (!dailyData[log.date]) {
         dailyData[log.date] = { income: 0, jobs: 0, cost: 0 }
       }
@@ -565,22 +623,22 @@ function App() {
         profit: dailyData[date].income - dailyData[date].cost,
         jobs: dailyData[date].jobs,
       }))
-  }, [filteredExpenses, dateFilteredLogs])
+  }, [filteredExpenses, dateFilteredWorkLogs])
 
   const jobBreakdown = useMemo(
     () => [
       {
         name: 'Food',
-        value: dateFilteredLogs.reduce((sum, log) => sum + log.grabFood, 0),
+        value: dateFilteredWorkLogs.reduce((sum, log) => sum + log.grabFood, 0),
         color: '#16a34a',
       },
       {
         name: 'Mart',
-        value: dateFilteredLogs.reduce((sum, log) => sum + log.expressBike, 0),
+        value: dateFilteredWorkLogs.reduce((sum, log) => sum + log.expressBike, 0),
         color: '#2563eb',
       },
     ],
-    [dateFilteredLogs],
+    [dateFilteredWorkLogs],
   )
 
   function selectProof(file: File | null) {
@@ -601,11 +659,27 @@ function App() {
     setUploadStatus(uploadEndpoint ? 'พร้อมอัปโหลดขึ้น Drive ตอนบันทึก' : 'พร้อมแนบในรายการ รอตั้งค่า Google Drive sync')
   }
 
+  function deleteLog(log: DailyLog) {
+    setLogs((current) => current.filter((item) => item.id !== log.id && logIdentity(item) !== logIdentity(log)))
+    setUploadStatus('ลบรายการรายวันออกจากหน้านี้แล้ว')
+  }
+
+  function deleteExpense(expense: Expense) {
+    setExpenses((current) =>
+      current.filter((item) => {
+        if (expense.id && item.id === expense.id) return false
+        return expenseIdentity(item) !== expenseIdentity(expense)
+      }),
+    )
+    setUploadStatus('ลบรายการรายจ่ายออกจากหน้านี้แล้ว')
+  }
+
   async function syncEntryToSheet(file: File | null) {
     if (!uploadEndpoint) {
       return {
         url: proofPreview,
-        status: 'local' as const,
+        proofStatus: 'local' as const,
+        syncStatus: 'local' as const,
       }
     }
 
@@ -653,7 +727,8 @@ function App() {
 
     return {
       url: payload.fileUrl || (file ? proofPreview : ''),
-      status: payload.fileUrl ? ('uploaded' as const) : ('local' as const),
+      proofStatus: payload.fileUrl ? ('uploaded' as const) : undefined,
+      syncStatus: 'synced' as const,
     }
   }
 
@@ -675,7 +750,8 @@ function App() {
       syncError = error instanceof Error ? error.message : 'ซิงก์ข้อมูลไม่สำเร็จ'
       result = {
         url: proofPreview,
-        status: 'local',
+        proofStatus: 'local',
+        syncStatus: 'local',
       }
     }
 
@@ -696,11 +772,14 @@ function App() {
       note: result?.url ? `${form.category} พร้อมหลักฐานรูป` : form.category,
       proofName: proofFile?.name,
       proofUrl: result?.url || undefined,
-      proofStatus: result?.status || undefined,
+      proofStatus: result?.proofStatus || undefined,
+      syncStatus: result?.syncStatus,
     }
 
     const nextExpense: Expense = {
+      id: Date.now() + 1,
       date: form.date,
+      category: form.category,
       fuel: Number(form.fuel),
       food: 0,
       drinks: 0,
@@ -709,6 +788,9 @@ function App() {
       depreciation: 50,
       insurance: 30,
       other: 0,
+      note: form.category,
+      proofUrl: result?.url || undefined,
+      syncStatus: result?.syncStatus,
     }
 
     // Set correct expense based on category
@@ -733,7 +815,9 @@ function App() {
       nextExpense.fuel = 0
     }
 
-    setLogs((current) => [nextLog, ...current])
+    if (isGrab) {
+      setLogs((current) => [nextLog, ...current])
+    }
     
     if (Number(form.fuel) > 0) {
       setExpenses((current) => [nextExpense, ...current])
@@ -742,7 +826,7 @@ function App() {
     setUploadStatus(
       syncError
         ? `บันทึกไว้ในเครื่องแล้ว แต่ซิงก์ชีตไม่สำเร็จ: ${syncError}`
-        : result?.status === 'uploaded'
+        : result?.syncStatus === 'synced'
         ? 'บันทึกสำเร็จและซิงก์เข้า Google Sheets เรียบร้อย'
         : uploadEndpoint
         ? 'บันทึกสำเร็จและซิงก์ข้อมูลแล้ว'
@@ -781,7 +865,14 @@ function App() {
             <RefreshCw size={17} className={isSyncing ? 'spin-icon' : ''} />
             {isSyncing ? 'กำลังซิงก์...' : 'ซิงก์ชีต'}
           </button>
-          <button className="primary-button" type="button">
+          <button
+            className="primary-button"
+            type="button"
+            onClick={() => {
+              setActiveTab('entry')
+              setForm((current) => ({ ...current, date: todayIso() }))
+            }}
+          >
             <Plus size={18} />
             บันทึกวันนี้
           </button>
@@ -803,7 +894,7 @@ function App() {
 
       <section className={`metric-grid mobile-tab-panel ${activeTab === 'summary' ? 'is-active' : ''}`} aria-label="สรุปผลรวม">
         <MetricCard icon={<Wallet size={20} />} label="รายได้รวม" value={formatBaht(summary.income)} trend="+ จากชีตล่าสุด" />
-        <MetricCard icon={<Bike size={20} />} label="งานทั้งหมด" value={currency.format(summary.jobs)} trend={`${decimal.format(summary.jobs / Math.max(logs.length, 1))} งาน/วัน`} />
+        <MetricCard icon={<Bike size={20} />} label="งานทั้งหมด" value={currency.format(summary.jobs)} trend={`${decimal.format(summary.jobs / Math.max(dateFilteredWorkLogs.length, 1))} งาน/วัน`} />
         <MetricCard icon={<Clock3 size={20} />} label="ชั่วโมงออนไลน์" value={decimal.format(summary.hours)} trend={`${formatBaht(summary.incomePerHour)}/ชั่วโมง`} />
         <MetricCard icon={<TrendingUp size={20} />} label="กำไรสุทธิ" value={formatBaht(summary.profit)} trend={`${formatBaht(summary.profitPerHour)}/ชั่วโมง`} />
         <MetricCard icon={<Goal size={20} />} label="เป้ารายได้" value={`${Math.round(summary.targetPercent)}%`} trend={`เป้า ${formatBaht(target.income)}`} />
@@ -917,14 +1008,16 @@ function App() {
                     <th>รายได้/ชม.</th>
                     <th>Rating</th>
                     <th>หลักฐาน</th>
+                    <th>สถานะ</th>
                     <th>หมายเหตุ</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredLogs.map((log) => (
                     <tr key={log.id}>
                       <td>{toThaiDate(log.date)}</td>
-                      <td>{log.start}-{log.end}</td>
+                      <td>{log.start && log.end ? `${log.start}-${log.end}` : '-'}</td>
                       <td>{decimal.format(log.hours)}</td>
                       <td>{jobsTotal(log)}</td>
                       <td>{formatBaht(log.income)}</td>
@@ -945,9 +1038,70 @@ function App() {
                           '-'
                         )}
                       </td>
+                      <td>
+                        <span className={log.syncStatus === 'synced' ? 'sync-badge synced' : 'sync-badge'}>
+                          {syncLabel(log.syncStatus)}
+                        </span>
+                      </td>
                       <td>{log.note}</td>
+                      <td>
+                        <button className="table-action danger" type="button" onClick={() => deleteLog(log)}>
+                          ลบ
+                        </button>
+                      </td>
                     </tr>
                   ))}
+                  {filteredLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} className="empty-cell">ยังไม่มีรายการงานในช่วงนี้</td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="subtable-heading">
+              <div>
+                <h3>รายจ่ายล่าสุด</h3>
+                <p>ค่าน้ำมันและรายจ่ายอื่นจะแสดงแยกจากงานรายวัน</p>
+              </div>
+            </div>
+            <div className="table-scroll">
+              <table className="expense-table">
+                <thead>
+                  <tr>
+                    <th>วันที่</th>
+                    <th>ประเภท</th>
+                    <th>จำนวนเงิน</th>
+                    <th>สถานะ</th>
+                    <th>หมายเหตุ</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredExpenseRows.map((expense, index) => (
+                    <tr key={`${expenseIdentity(expense)}-${index}`}>
+                      <td>{toThaiDate(expense.date)}</td>
+                      <td>{expenseCategory(expense)}</td>
+                      <td>{formatBaht(expenseTotal(expense))}</td>
+                      <td>
+                        <span className={expense.syncStatus === 'synced' ? 'sync-badge synced' : 'sync-badge'}>
+                          {syncLabel(expense.syncStatus)}
+                        </span>
+                      </td>
+                      <td>{expense.note || '-'}</td>
+                      <td>
+                        <button className="table-action danger" type="button" onClick={() => deleteExpense(expense)}>
+                          ลบ
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredExpenseRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="empty-cell">ยังไม่มีรายจ่ายในช่วงนี้</td>
+                    </tr>
+                  ) : null}
                 </tbody>
               </table>
             </div>
