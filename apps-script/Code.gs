@@ -93,6 +93,8 @@ function getExpenses() {
         depreciation: toNumber(row[6]),
         insurance: toNumber(row[7]),
         other: toNumber(row[8]),
+        category: String(row[10] || ''),
+        note: String(row[10] || ''),
       }
     })
     .filter(Boolean)

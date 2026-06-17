@@ -175,14 +175,17 @@ function todayIso() {
 }
 
 function expenseTotal(expense: Expense) {
+  const fixedCost = expense.category && expense.category !== 'รายได้ Grab'
+    ? 0
+    : expense.depreciation + expense.insurance
+
   return (
     expense.fuel +
     expense.food +
     expense.drinks +
     expense.repair +
     expense.phone +
-    expense.depreciation +
-    expense.insurance +
+    fixedCost +
     expense.other
   )
 }
@@ -529,7 +532,7 @@ function App() {
               depreciation: toNumber(exp.depreciation),
               insurance: toNumber(exp.insurance),
               other: toNumber(exp.other),
-              category: exp.category,
+              category: exp.category || exp.note,
               note: exp.note,
               syncStatus: 'synced',
             }
@@ -785,8 +788,8 @@ function App() {
       drinks: 0,
       repair: 0,
       phone: 0,
-      depreciation: 50,
-      insurance: 30,
+      depreciation: isGrab ? 50 : 0,
+      insurance: isGrab ? 30 : 0,
       other: 0,
       note: form.category,
       proofUrl: result?.url || undefined,
