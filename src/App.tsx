@@ -169,11 +169,68 @@ function jobsTotal(log: DailyLog) {
 }
 
 function toThaiDate(date: string) {
+  if (!isValidIsoDate(date)) return date || '-'
+
   return new Intl.DateTimeFormat('th-TH', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
   }).format(new Date(`${date}T00:00:00`))
+}
+
+function isValidIsoDate(date: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date)
+}
+
+function normalizeSheetDate(value: unknown) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10)
+  }
+
+  const text = String(value || '').trim()
+  if (!text || text === 'วันที่') return ''
+  if (isValidIsoDate(text)) return text
+
+  const thaiDate = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (thaiDate) {
+    const [, day, month, year] = thaiDate
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`
+  }
+
+  const longDate = text.match(/^[A-Za-z]{3}\s+([A-Za-z]{3})\s+(\d{1,2})\s+(\d{4})/)
+  if (longDate) {
+    const [, monthName, day, year] = longDate
+    const monthIndex = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].indexOf(monthName)
+    if (monthIndex >= 0) {
+      return `${year}-${String(monthIndex + 1).padStart(2, '0')}-${day.padStart(2, '0')}`
+    }
+  }
+
+  const parsed = new Date(text)
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10)
+  }
+
+  return ''
+}
+
+function normalizeSheetTime(value: unknown) {
+  const text = String(value || '').trim()
+  if (!text || text === 'เริ่มออนไลน์' || text === 'เลิกออนไลน์') return ''
+
+  const simpleTime = text.match(/(\d{1,2}):(\d{2})/)
+  if (simpleTime) {
+    const [, hour, minute] = simpleTime
+    return `${hour.padStart(2, '0')}:${minute}`
+  }
+
+  return text
+}
+
+function toNumber(value: unknown, fallback = 0) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  const parsed = Number(String(value ?? '').replace(/,/g, ''))
+  return Number.isFinite(parsed) ? parsed : fallback
 }
 
 function fileToBase64(file: File) {
@@ -290,36 +347,51 @@ function App() {
       }
       
       if (payload.logs) {
-        const mappedLogs = payload.logs.map((log, index) => ({
-          ...log,
-          id: Number(log.id || Date.now() + index),
-          category: log.category || 'รายได้ Grab',
-          date: log.date || new Date().toISOString().slice(0, 10),
-          start: log.start || '',
-          end: log.end || '',
-          grabFood: Number(log.grabFood || 0),
-          expressBike: Number(log.expressBike || 0),
-          expressShop: Number(log.expressShop || 0),
-          hours: Number(log.hours || 0),
-          distance: Number(log.distance || 0),
-          income: Number(log.income || 0),
-        }))
+        const mappedLogs = payload.logs
+          .map<DailyLog | null>((log, index) => {
+            const date = normalizeSheetDate(log.date)
+            if (!date || !isValidIsoDate(date)) return null
+
+            return {
+              ...log,
+              id: toNumber(log.id, Date.now() + index),
+              category: log.category || 'รายได้ Grab',
+              date,
+              start: normalizeSheetTime(log.start),
+              end: normalizeSheetTime(log.end),
+              grabFood: toNumber(log.grabFood),
+              expressBike: toNumber(log.expressBike),
+              expressShop: toNumber(log.expressShop),
+              hours: toNumber(log.hours),
+              distance: toNumber(log.distance),
+              income: toNumber(log.income),
+              rating: log.rating === undefined ? undefined : toNumber(log.rating),
+              acceptance: log.acceptance === undefined ? undefined : toNumber(log.acceptance),
+            }
+          })
+          .filter((log): log is DailyLog => Boolean(log))
         setLogs(mappedLogs)
       }
       
       if (payload.expenses) {
-        const mappedExpenses = payload.expenses.map((exp) => ({
-          ...exp,
-          date: exp.date || new Date().toISOString().slice(0, 10),
-          fuel: Number(exp.fuel || 0),
-          food: Number(exp.food || 0),
-          drinks: Number(exp.drinks || 0),
-          repair: Number(exp.repair || 0),
-          phone: Number(exp.phone || 0),
-          depreciation: Number(exp.depreciation || 0),
-          insurance: Number(exp.insurance || 0),
-          other: Number(exp.other || 0),
-        }))
+        const mappedExpenses = payload.expenses
+          .map<Expense | null>((exp) => {
+            const date = normalizeSheetDate(exp.date)
+            if (!date || !isValidIsoDate(date)) return null
+
+            return {
+              date,
+              fuel: toNumber(exp.fuel),
+              food: toNumber(exp.food),
+              drinks: toNumber(exp.drinks),
+              repair: toNumber(exp.repair),
+              phone: toNumber(exp.phone),
+              depreciation: toNumber(exp.depreciation),
+              insurance: toNumber(exp.insurance),
+              other: toNumber(exp.other),
+            }
+          })
+          .filter((exp): exp is Expense => Boolean(exp))
         setExpenses(mappedExpenses)
       }
       

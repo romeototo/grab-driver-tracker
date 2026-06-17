@@ -2,11 +2,12 @@ const SPREADSHEET_ID = '1LvEzLjFCDDXTVTU5MYd0zlr2X6_1MR35MklC0Ow2EDg'
 const DAILY_SHEET_NAME = '📋 บันทึกรายวัน'
 const EXPENSE_SHEET_NAME = '💸 รายจ่าย'
 const DEFAULT_WEBHOOK_TOKEN = '260332'
+const APP_TIME_ZONE = 'Asia/Bangkok'
 
 function doGet(event) {
   try {
     const token = event && event.parameter ? event.parameter.token : ''
-    const expectedToken = PropertiesService.getScriptProperties().getProperty('WEBHOOK_TOKEN') || DEFAULT_WEBHOOK_TOKEN
+    const expectedToken = getExpectedToken()
 
     if (expectedToken && token !== expectedToken) {
       return jsonResponse({
@@ -15,13 +16,10 @@ function doGet(event) {
       })
     }
 
-    const logs = getDailyLogs()
-    const expenses = getExpenses()
-
     return jsonResponse({
       ok: true,
-      logs,
-      expenses,
+      logs: getDailyLogs(),
+      expenses: getExpenses(),
     })
   } catch (error) {
     return jsonResponse({
@@ -34,81 +32,67 @@ function doGet(event) {
 function getDailyLogs() {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(DAILY_SHEET_NAME)
   if (!sheet) return []
-  const data = sheet.getDataRange().getValues()
-  if (data.length <= 1) return []
 
-  const logs = []
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i]
-    if (!row[0]) continue
+  return sheet
+    .getDataRange()
+    .getDisplayValues()
+    .slice(3)
+    .map((row, index) => {
+      const date = normalizeDate(row[0])
+      if (!date) return null
 
-    let dateStr = ''
-    if (row[0] instanceof Date) {
-      dateStr = Utilities.formatDate(row[0], Session.getScriptTimeZone() || 'Asia/Bangkok', 'yyyy-MM-dd')
-    } else {
-      dateStr = String(row[0]).split('T')[0]
-    }
+      const note = String(row[16] || '')
+      const proofUrl = extractProofUrl(note)
 
-    const noteCol = String(row[16] || '')
-    let proofUrl = ''
-    if (noteCol.includes('หลักฐาน: http')) {
-      const match = noteCol.match(/หลักฐาน:\s*(https?:\/\/[^\s]+)/)
-      if (match) {
-        proofUrl = match[1]
+      return {
+        id: index + 4,
+        category: 'รายได้ Grab',
+        date,
+        start: normalizeTime(row[1]),
+        end: normalizeTime(row[2]),
+        hours: toNumber(row[3]),
+        grabFood: toNumber(row[4]),
+        expressBike: toNumber(row[5]),
+        expressShop: toNumber(row[6]),
+        distance: toNumber(row[8]),
+        income: toNumber(row[9]),
+        rating: toNumber(row[14], 4.98),
+        acceptance: toNumber(row[15], 96),
+        note,
+        proofUrl: proofUrl || undefined,
+        proofStatus: proofUrl ? 'uploaded' : undefined,
       }
-    }
-
-    logs.push({
-      id: i,
-      date: dateStr,
-      start: String(row[1] || ''),
-      end: String(row[2] || ''),
-      hours: Number(row[3] || 0),
-      grabFood: Number(row[4] || 0),
-      expressBike: Number(row[5] || 0),
-      expressShop: Number(row[6] || 0),
-      income: Number(row[9] || 0),
-      rating: Number(row[11] || 4.98),
-      acceptance: Number(row[13] || 96),
-      note: noteCol,
-      proofUrl: proofUrl || undefined,
-      proofStatus: proofUrl ? 'uploaded' : undefined,
     })
-  }
-  return logs.reverse()
+    .filter(Boolean)
+    .reverse()
 }
 
 function getExpenses() {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(EXPENSE_SHEET_NAME)
   if (!sheet) return []
-  const data = sheet.getDataRange().getValues()
-  if (data.length <= 1) return []
 
-  const expenses = []
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i]
-    if (!row[0]) continue
+  return sheet
+    .getDataRange()
+    .getDisplayValues()
+    .slice(3)
+    .map((row) => {
+      const date = normalizeDate(row[0])
+      if (!date) return null
 
-    let dateStr = ''
-    if (row[0] instanceof Date) {
-      dateStr = Utilities.formatDate(row[0], Session.getScriptTimeZone() || 'Asia/Bangkok', 'yyyy-MM-dd')
-    } else {
-      dateStr = String(row[0]).split('T')[0]
-    }
-
-    expenses.push({
-      date: dateStr,
-      fuel: Number(row[1] || 0),
-      food: Number(row[2] || 0),
-      drinks: Number(row[3] || 0),
-      repair: Number(row[4] || 0),
-      phone: Number(row[5] || 0),
-      depreciation: Number(row[6] || 0),
-      insurance: Number(row[7] || 0),
-      other: Number(row[8] || 0),
+      return {
+        date,
+        fuel: toNumber(row[1]),
+        food: toNumber(row[2]),
+        drinks: toNumber(row[3]),
+        repair: toNumber(row[4]),
+        phone: toNumber(row[5]),
+        depreciation: toNumber(row[6]),
+        insurance: toNumber(row[7]),
+        other: toNumber(row[8]),
+      }
     })
-  }
-  return expenses.reverse()
+    .filter(Boolean)
+    .reverse()
 }
 
 function doPost(event) {
@@ -146,11 +130,15 @@ function doPost(event) {
 }
 
 function verifyToken(payload) {
-  const expectedToken = PropertiesService.getScriptProperties().getProperty('WEBHOOK_TOKEN') || DEFAULT_WEBHOOK_TOKEN
+  const expectedToken = getExpectedToken()
 
   if (expectedToken && payload.token !== expectedToken) {
     throw new Error('Invalid sync PIN')
   }
+}
+
+function getExpectedToken() {
+  return PropertiesService.getScriptProperties().getProperty('WEBHOOK_TOKEN') || DEFAULT_WEBHOOK_TOKEN
 }
 
 function getUploadFolder() {
@@ -179,7 +167,7 @@ function appendDailyLog(payload, fileUrl) {
   const incomePerHour = hours > 0 ? income / hours : 0
 
   sheet.appendRow([
-    payload.date || new Date(),
+    normalizeDate(payload.date) || Utilities.formatDate(new Date(), APP_TIME_ZONE, 'yyyy-MM-dd'),
     start,
     end,
     hours,
@@ -201,23 +189,21 @@ function appendDailyLog(payload, fileUrl) {
 
 function appendExpense(payload, fileUrl) {
   const category = payload.category || 'ค่าน้ำมัน'
-  const fuel = Number(payload.fuel || 0)
+  const amount = Number(payload.fuel || 0)
 
-  if (!fuel) {
+  if (!amount) {
     return
   }
 
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(EXPENSE_SHEET_NAME)
-  const expense = buildExpenseRow(category, fuel)
-
-  // Calculate fixed costs only for Grab income entries
-  const isGrabIncome = (category === 'รายได้ Grab')
+  const expense = buildExpenseRow(category, amount)
+  const isGrabIncome = category === 'รายได้ Grab'
   const dep = isGrabIncome ? 50 : 0
   const ins = isGrabIncome ? 30 : 0
-  const total = fuel + dep + ins
+  const total = expense.fuel + expense.food + expense.drinks + expense.repair + expense.phone + dep + ins + expense.other
 
   sheet.appendRow([
-    payload.date || new Date(),
+    normalizeDate(payload.date) || Utilities.formatDate(new Date(), APP_TIME_ZONE, 'yyyy-MM-dd'),
     expense.fuel,
     expense.food,
     expense.drinks,
@@ -256,6 +242,40 @@ function buildExpenseRow(category, amount) {
   }
 
   return row
+}
+
+function normalizeDate(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return Utilities.formatDate(value, APP_TIME_ZONE, 'yyyy-MM-dd')
+  }
+
+  const text = String(value || '').trim()
+  if (!text || text === 'วันที่') return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text
+
+  const thaiDate = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (thaiDate) {
+    return `${thaiDate[3]}-${thaiDate[2].padStart(2, '0')}-${thaiDate[1].padStart(2, '0')}`
+  }
+
+  return ''
+}
+
+function normalizeTime(value) {
+  const text = String(value || '').trim()
+  const match = text.match(/(\d{1,2}):(\d{2})/)
+  return match ? `${match[1].padStart(2, '0')}:${match[2]}` : ''
+}
+
+function extractProofUrl(note) {
+  const match = String(note || '').match(/หลักฐาน:\s*(https?:\/\/[^\s]+)/)
+  return match ? match[1] : ''
+}
+
+function toNumber(value, fallback) {
+  const parsed = Number(String(value || '').replace(/,/g, ''))
+  if (Number.isFinite(parsed)) return parsed
+  return fallback || 0
 }
 
 function computeHours(start, end) {
