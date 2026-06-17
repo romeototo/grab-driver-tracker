@@ -29,7 +29,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 import './App.css'
 
@@ -133,6 +133,8 @@ const defaultUploadEndpoint =
   (import.meta.env.VITE_UPLOAD_ENDPOINT as string | undefined) ||
   'https://script.google.com/macros/s/AKfycby9K_FlqAa84tP0v8HWVOJNcycJLAwPD7bkol3cq5m25xziky4qGfe97DL4AHvJENyn/exec'
 const defaultSyncToken = '260332'
+const logsStorageKey = 'grabDriverTrackerLogsV1'
+const expensesStorageKey = 'grabDriverTrackerExpensesV1'
 
 const peakHours = [
   { name: 'เช้า', time: '06:00-10:00', value: 42, hint: 'ช่วงไปทำงาน' },
@@ -236,6 +238,94 @@ function toNumber(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
+function isDailyLog(value: unknown): value is DailyLog {
+  if (!value || typeof value !== 'object') return false
+  const log = value as DailyLog
+  return typeof log.date === 'string' && isValidIsoDate(log.date) && typeof log.category === 'string'
+}
+
+function isExpense(value: unknown): value is Expense {
+  if (!value || typeof value !== 'object') return false
+  const expense = value as Expense
+  return typeof expense.date === 'string' && isValidIsoDate(expense.date)
+}
+
+function readStoredLogs() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(logsStorageKey) || '[]') as unknown
+    return Array.isArray(stored) ? stored.filter(isDailyLog) : []
+  } catch {
+    return []
+  }
+}
+
+function readStoredExpenses() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(expensesStorageKey) || '[]') as unknown
+    return Array.isArray(stored) ? stored.filter(isExpense) : []
+  } catch {
+    return []
+  }
+}
+
+function restoreLogs() {
+  const stored = readStoredLogs()
+  return stored.length > 0 ? stored : initialLogs
+}
+
+function restoreExpenses() {
+  const stored = readStoredExpenses()
+  return stored.length > 0 ? stored : initialExpenses
+}
+
+function logIdentity(log: DailyLog) {
+  return [
+    log.date,
+    log.category,
+    log.start,
+    log.end,
+    log.grabFood,
+    log.expressBike,
+    log.expressShop,
+    log.income,
+    log.note || '',
+  ].join('|')
+}
+
+function expenseIdentity(expense: Expense) {
+  return [
+    expense.date,
+    expense.fuel,
+    expense.food,
+    expense.drinks,
+    expense.repair,
+    expense.phone,
+    expense.depreciation,
+    expense.insurance,
+    expense.other,
+  ].join('|')
+}
+
+function mergeLogs(primary: DailyLog[], secondary: DailyLog[]) {
+  const seen = new Set<string>()
+  return [...primary, ...secondary].filter((log) => {
+    const key = logIdentity(log)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function mergeExpenses(primary: Expense[], secondary: Expense[]) {
+  const seen = new Set<string>()
+  return [...primary, ...secondary].filter((expense) => {
+    const key = expenseIdentity(expense)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 function fileToBase64(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
@@ -282,8 +372,8 @@ function getCurrentTime() {
 }
 
 function App() {
-  const [logs, setLogs] = useState(initialLogs)
-  const [expenses, setExpenses] = useState(initialExpenses)
+  const [logs, setLogs] = useState(restoreLogs)
+  const [expenses, setExpenses] = useState(restoreExpenses)
   const [query, setQuery] = useState('')
   const [range, setRange] = useState('เดือนนี้')
   const [activeTab, setActiveTab] = useState<MobileTab>('entry')
@@ -307,6 +397,14 @@ function App() {
     income: '420',
     fuel: '120',
   })
+
+  useEffect(() => {
+    localStorage.setItem(logsStorageKey, JSON.stringify(logs))
+  }, [logs])
+
+  useEffect(() => {
+    localStorage.setItem(expensesStorageKey, JSON.stringify(expenses))
+  }, [expenses])
 
   function adjustCounter(field: 'grabFood' | 'expressBike', amount: number) {
     setForm((current) => {
@@ -372,7 +470,7 @@ function App() {
             }
           })
           .filter((log): log is DailyLog => Boolean(log))
-        setLogs(mappedLogs)
+        setLogs((current) => mergeLogs(mappedLogs, current))
       }
       
       if (payload.expenses) {
@@ -394,7 +492,7 @@ function App() {
             }
           })
           .filter((exp): exp is Expense => Boolean(exp))
-        setExpenses(mappedExpenses)
+        setExpenses((current) => mergeExpenses(mappedExpenses, current))
       }
       
       setUploadStatus('ดึงข้อมูลล่าสุดจาก Google Sheets สำเร็จ')
@@ -569,13 +667,16 @@ function App() {
     const endHour = Number(form.end.split(':')[0]) + Number(form.end.split(':')[1]) / 60
     const hours = isGrab ? Math.max(endHour - startHour, 0) : 0
     let result: Awaited<ReturnType<typeof syncEntryToSheet>>
+    let syncError = ''
 
     try {
       result = await syncEntryToSheet(proofFile)
     } catch (error) {
-      setUploadStatus(error instanceof Error ? error.message : 'บันทึกข้อมูลไม่สำเร็จ')
-      setIsSaving(false)
-      return
+      syncError = error instanceof Error ? error.message : 'ซิงก์ข้อมูลไม่สำเร็จ'
+      result = {
+        url: proofPreview,
+        status: 'local',
+      }
     }
 
     const nextLog: DailyLog = {
@@ -639,7 +740,9 @@ function App() {
     }
 
     setUploadStatus(
-      result?.status === 'uploaded'
+      syncError
+        ? `บันทึกไว้ในเครื่องแล้ว แต่ซิงก์ชีตไม่สำเร็จ: ${syncError}`
+        : result?.status === 'uploaded'
         ? 'บันทึกสำเร็จและซิงก์เข้า Google Sheets เรียบร้อย'
         : uploadEndpoint
         ? 'บันทึกสำเร็จและซิงก์ข้อมูลแล้ว'

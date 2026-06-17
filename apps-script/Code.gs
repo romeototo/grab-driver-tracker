@@ -115,7 +115,9 @@ function doPost(event) {
       fileId = file.getId()
     }
 
-    appendDailyLog(payload, fileUrl)
+    if ((payload.category || 'รายได้ Grab') === 'รายได้ Grab') {
+      appendDailyLog(payload, fileUrl)
+    }
     appendExpense(payload, fileUrl)
 
     return jsonResponse({
